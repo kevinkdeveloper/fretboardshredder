@@ -1,0 +1,477 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Guitar Scale Trainer - E Minor Default</title>
+    <style>
+        :root {
+            --fretboard-color: #2c241b;
+            --fret-wire-color: #c0c0c0;
+            --note-bg: #eee;
+            --note-text: #333;
+            --root-note-bg: #3498db;
+            --root-note-text: #fff;
+            --scale-note-bg: #e74c3c;
+            --scale-note-text: #fff;
+            --playing-note-bg: #f1c40f;
+            --playing-note-text: #000;
+            --inlay-color: rgba(255, 255, 255, 0.2);
+            --box-border-color: #f1c40f;
+            --box-bg-tint: rgba(241, 196, 15, 0.1);
+        }
+
+        * { box-sizing: border-box; }
+
+        body {
+            font-family: 'Segoe UI', sans-serif;
+            background-color: #1a1a1a;
+            color: white;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            min-height: 100vh;
+            margin: 0;
+            padding: 20px 5%;
+            user-select: none;
+            overflow-x: hidden;
+        }
+
+        h1 { margin: 5px 0; font-size: 1.5rem; }
+        p.subtitle { color: #888; margin-bottom: 15px; font-size: 0.8rem; text-align: center; }
+
+        .controls {
+            background: #333;
+            padding: 10px;
+            border-radius: 8px;
+            display: flex;
+            gap: 10px;
+            margin-bottom: 15px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.3);
+            flex-wrap: wrap;
+            justify-content: center;
+            align-items: flex-end;
+            width: 100%;
+        }
+
+        .control-group { display: flex; flex-direction: column; }
+        label { font-size: 0.7rem; margin-bottom: 2px; color: #aaa; font-weight: bold; }
+        
+        select, input { 
+            padding: 4px 8px; font-size: 0.9rem; border-radius: 4px; border: none; 
+            cursor: pointer; height: 30px; width: 100%;
+        }
+        input[type="number"] { width: 50px; }
+
+        button.action-btn {
+            background-color: #27ae60; color: white; border: none; padding: 0 15px;
+            font-size: 0.9rem; font-weight: bold; border-radius: 4px; cursor: pointer;
+            height: 30px; transition: background 0.2s; min-width: 90px;
+        }
+        button.action-btn:hover { background-color: #2ecc71; }
+        button.action-btn.stop { background-color: #c0392b; }
+        button.action-btn.stop:hover { background-color: #e74c3c; }
+
+        /* --- FRETBOARD --- */
+        .fretboard-container {
+            width: 100%;
+            padding-bottom: 10px;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .fretboard {
+            display: flex;
+            flex-direction: column;
+            background: var(--fretboard-color);
+            width: 100%;
+            border: 2px solid #444;
+            position: relative;
+        }
+
+        .string {
+            display: flex;
+            height: 40px;
+            position: relative;
+            width: 100%;
+        }
+        
+        .string::before {
+            content: ''; position: absolute; top: 50%; left: 0; right: 0;
+            height: var(--string-thickness, 2px); background-color: #888;
+            z-index: 1; pointer-events: none;
+        }
+        .string:nth-child(1) { --string-thickness: 1px; } 
+        .string:nth-child(2) { --string-thickness: 1.5px; }
+        .string:nth-child(3) { --string-thickness: 2px; }
+        .string:nth-child(4) { --string-thickness: 2.5px; }
+        .string:nth-child(5) { --string-thickness: 3px; }
+        .string:nth-child(6) { --string-thickness: 3.5px; }
+
+        .note-fret {
+            flex: 1;
+            border-right: 2px solid var(--fret-wire-color);
+            display: flex; align-items: center; justify-content: center;
+            position: relative; 
+            cursor: pointer;
+            min-width: 0;
+        }
+        
+        .note-fret:hover { background-color: rgba(255,255,255,0.05); }
+
+        .note-fret.nut {
+            flex: 0 0 35px;
+            background-color: #222; 
+            border-right: 4px solid #ddd;
+            z-index: 10;
+        }
+
+        .note-fret.single-fretmark::after {
+            content: ''; position: absolute; background: var(--inlay-color);
+            width: 1.5vw; height: 1.5vw; max-width: 12px; max-height: 12px;
+            border-radius: 50%; z-index: 0;
+        }
+        .note-fret.double-fretmark::after { 
+            content: ''; position: absolute; background: var(--inlay-color);
+            width: 1.5vw; height: 1.5vw; max-width: 12px; max-height: 12px;
+            border-radius: 50%;
+            box-shadow: 0 -20px 0 var(--inlay-color); z-index: 0;
+        }
+
+        .note-display {
+            width: 2.5vw; height: 2.5vw;
+            max-width: 28px; max-height: 28px;
+            min-width: 18px; min-height: 18px;
+            border-radius: 50%;
+            background: var(--note-bg); color: var(--note-text);
+            display: flex; align-items: center; justify-content: center;
+            font-weight: bold; font-size: 0.7rem;
+            z-index: 2; opacity: 0;
+            transition: transform 0.1s, opacity 0.2s;
+            transform: scale(0.5); pointer-events: none;
+        }
+
+        @media (max-width: 600px) {
+            .note-display { font-size: 0.6rem; }
+        }
+
+        .note-display.visible { opacity: 1; transform: scale(1); }
+        .note-display.playing { 
+            transform: scale(1.3); background-color: var(--playing-note-bg) !important;
+            color: var(--playing-note-text) !important; box-shadow: 0 0 10px #f1c40f; 
+            z-index: 100;
+        }
+        .note-display.root {
+            background-color: var(--root-note-bg); color: var(--root-note-text);
+            box-shadow: 0 0 8px var(--root-note-bg); z-index: 3;
+        }
+        .note-display.scale-note {
+            background-color: var(--scale-note-bg); color: var(--scale-note-text);
+        }
+
+        .note-fret.in-box { background-color: var(--box-bg-tint); }
+        .note-fret.box-left { border-left: 2px solid var(--box-border-color) !important; }
+        .note-fret.box-right { border-right: 2px solid var(--box-border-color) !important; }
+        .note-fret.box-top { border-top: 2px solid var(--box-border-color) !important; }
+        .note-fret.box-bottom { border-bottom: 2px solid var(--box-border-color) !important; }
+
+        .fret-numbers { display: flex; width: 100%; }
+        .fret-number { 
+            flex: 1; text-align: center; color: #666; 
+            font-size: 0.7rem; box-sizing: border-box;
+            border-right: 2px solid transparent; padding-top: 3px;
+            min-width: 0;
+        }
+        .fret-number-spacer {
+            flex: 0 0 35px;
+            border-right: 4px solid transparent;
+        }
+
+    </style>
+</head>
+<body>
+
+    <h1>Fit-to-Screen Trainer</h1>
+
+    <div class="controls">
+        <div class="control-group">
+            <label>Root</label>
+            <select id="rootNote"></select>
+        </div>
+        <div class="control-group">
+            <label>Scale</label>
+            <select id="scaleType"></select>
+        </div>
+        
+        <div class="control-group">
+            <label>Start</label>
+            <input type="number" id="startFret" value="0" min="0" max="24">
+        </div>
+        <div class="control-group">
+            <label>End</label>
+            <input type="number" id="endFret" value="12" min="0" max="24">
+        </div>
+
+        <button class="action-btn" id="playBtn" onclick="togglePlay()">▶ Play</button>
+    </div>
+
+    <div class="fretboard-container">
+        <div class="fretboard" id="fretboard"></div>
+        <div class="fret-numbers" id="fretNumbers"></div>
+    </div>
+
+    <script>
+        const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        
+        // --- REALISTIC GUITAR SYNTHESIS ---
+        function playTone(freq, duration = 0.5) {
+            if (audioCtx.state === 'suspended') audioCtx.resume();
+            
+            const now = audioCtx.currentTime;
+            const osc = audioCtx.createOscillator();
+            const gainNode = audioCtx.createGain();
+            const filterNode = audioCtx.createBiquadFilter();
+
+            // 1. Source: Sawtooth wave provides rich harmonics (buzz) like a string
+            osc.type = 'sawtooth';
+            osc.frequency.value = freq;
+
+            // 2. Filter: Low-pass filter simulating the "pluck" damping
+            // Starts bright and rapidly closes to remove high frequencies
+            filterNode.type = 'lowpass';
+            filterNode.Q.value = 1; // Slight resonance
+            filterNode.frequency.setValueAtTime(freq * 3, now); 
+            filterNode.frequency.exponentialRampToValueAtTime(freq, now + 0.15);
+
+            // 3. Amplitude: Fast attack, exponential decay (plucked string physics)
+            gainNode.gain.setValueAtTime(0, now);
+            gainNode.gain.linearRampToValueAtTime(0.2, now + 0.01); // Fast attack
+            gainNode.gain.exponentialRampToValueAtTime(0.001, now + duration);
+
+            // Connect graph: Osc -> Filter -> Gain -> Out
+            osc.connect(filterNode);
+            filterNode.connect(gainNode);
+            gainNode.connect(audioCtx.destination);
+
+            osc.start();
+            osc.stop(now + duration + 0.1);
+        }
+
+        const noteNames = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"];
+        const stringBaseMidi = [64, 59, 55, 50, 45, 40]; // High E (0) to Low E (5)
+        
+        const scales = {
+            "Major": [0, 2, 4, 5, 7, 9, 11],
+            "Minor (Natural)": [0, 2, 3, 5, 7, 8, 10],
+            "Pentatonic Major": [0, 2, 4, 7, 9],
+            "Pentatonic Minor": [0, 3, 5, 7, 10],
+            "Blues": [0, 3, 5, 6, 7, 10],
+            "Harmonic Minor": [0, 2, 3, 5, 7, 8, 11],
+            "Dorian": [0, 2, 3, 5, 7, 9, 10],
+            "Phrygian": [0, 1, 3, 5, 7, 8, 10],
+            "Lydian": [0, 2, 4, 6, 7, 9, 11],
+            "Mixolydian": [0, 2, 4, 5, 7, 9, 10],
+            "Locrian": [0, 1, 3, 5, 6, 8, 10]
+        };
+
+        const numberOfFrets = 24;
+        const fretboardEl = document.getElementById('fretboard');
+        const fretNumbersEl = document.getElementById('fretNumbers');
+        const rootSelect = document.getElementById('rootNote');
+        const scaleSelect = document.getElementById('scaleType');
+        const startFretInput = document.getElementById('startFret');
+        const endFretInput = document.getElementById('endFret');
+        const playBtn = document.getElementById('playBtn');
+
+        let isPlaying = false;
+        let shouldStop = false;
+
+        function midiToFreq(midi) { return 440 * Math.pow(2, (midi - 69) / 12); }
+
+        function init() {
+            // Populate Root Notes
+            noteNames.forEach((note, index) => {
+                const option = document.createElement('option');
+                option.value = index;
+                option.textContent = note;
+                if(note === 'E') option.selected = true; 
+                rootSelect.appendChild(option);
+            });
+
+            // Populate Scales
+            for (const [name, intervals] of Object.entries(scales)) {
+                const option = document.createElement('option');
+                option.value = name;
+                option.textContent = name;
+                if(name === 'Minor (Natural)') option.selected = true;
+                scaleSelect.appendChild(option);
+            }
+
+            drawFretboard();
+            updateFretboard();
+
+            rootSelect.addEventListener('change', updateFretboard);
+            scaleSelect.addEventListener('change', updateFretboard);
+            startFretInput.addEventListener('change', updateFretboard);
+            endFretInput.addEventListener('change', updateFretboard);
+        }
+
+        function drawFretboard() {
+            fretboardEl.innerHTML = '';
+            fretNumbersEl.innerHTML = '';
+
+            stringBaseMidi.forEach((baseMidi, stringIndex) => {
+                const stringRow = document.createElement('div');
+                stringRow.classList.add('string');
+
+                for (let fret = 0; fret <= numberOfFrets; fret++) {
+                    const currentMidi = baseMidi + fret;
+                    const noteIndex = currentMidi % 12;
+                    const noteName = noteNames[noteIndex];
+                    const frequency = midiToFreq(currentMidi);
+
+                    const fretDiv = document.createElement('div');
+                    fretDiv.classList.add('note-fret');
+                    if (fret === 0) fretDiv.classList.add('nut');
+
+                    fretDiv.dataset.fret = fret;
+                    fretDiv.dataset.string = stringIndex;
+
+                    if (stringIndex === 2 || stringIndex === 3) {
+                        if ([3, 5, 7, 9, 15, 17, 19, 21].includes(fret)) fretDiv.classList.add('single-fretmark');
+                        if (fret === 12 || fret === 24) fretDiv.classList.add('double-fretmark');
+                    }
+
+                    const noteDisplay = document.createElement('div');
+                    noteDisplay.classList.add('note-display');
+                    noteDisplay.dataset.noteIndex = noteIndex; 
+                    noteDisplay.dataset.midi = currentMidi;
+                    noteDisplay.dataset.fret = fret;
+                    noteDisplay.dataset.string = stringIndex;
+                    noteDisplay.textContent = noteName;
+
+                    fretDiv.appendChild(noteDisplay);
+
+                    fretDiv.addEventListener('mousedown', () => {
+                        playTone(frequency);
+                        noteDisplay.classList.add('playing');
+                        setTimeout(() => noteDisplay.classList.remove('playing'), 150);
+                    });
+
+                    stringRow.appendChild(fretDiv);
+                }
+                fretboardEl.appendChild(stringRow);
+            });
+
+            const nutSpacer = document.createElement('div');
+            nutSpacer.classList.add('fret-number-spacer');
+            fretNumbersEl.appendChild(nutSpacer);
+
+            for (let i = 1; i <= numberOfFrets; i++) {
+                const numDiv = document.createElement('div');
+                numDiv.classList.add('fret-number');
+                numDiv.textContent = i;
+                fretNumbersEl.appendChild(numDiv);
+            }
+        }
+
+        function updateFretboard() {
+            const rootIndex = parseInt(rootSelect.value);
+            const scaleName = scaleSelect.value;
+            const intervals = scales[scaleName];
+            const allowedIndices = intervals.map(interval => (rootIndex + interval) % 12);
+            
+            const minFret = parseInt(startFretInput.value);
+            const maxFret = parseInt(endFretInput.value);
+            const allFrets = document.querySelectorAll('.note-fret');
+            const allNotes = document.querySelectorAll('.note-display');
+
+            allFrets.forEach(fretDiv => {
+                const fNum = parseInt(fretDiv.dataset.fret);
+                const sNum = parseInt(fretDiv.dataset.string);
+
+                fretDiv.classList.remove('in-box', 'box-left', 'box-right', 'box-top', 'box-bottom');
+
+                if (fNum >= minFret && fNum <= maxFret) {
+                    fretDiv.classList.add('in-box');
+                    if (fNum === minFret) fretDiv.classList.add('box-left');
+                    if (fNum === maxFret) fretDiv.classList.add('box-right');
+                    if (sNum === 0) fretDiv.classList.add('box-top');
+                    if (sNum === 5) fretDiv.classList.add('box-bottom');
+                }
+            });
+
+            allNotes.forEach(noteEl => {
+                const noteIndex = parseInt(noteEl.dataset.noteIndex);
+                noteEl.classList.remove('visible', 'root', 'scale-note');
+
+                if (allowedIndices.includes(noteIndex)) {
+                    noteEl.classList.add('visible');
+                    if (noteIndex === rootIndex) {
+                        noteEl.classList.add('root');
+                    } else {
+                        noteEl.classList.add('scale-note');
+                    }
+                }
+            });
+        }
+
+        function togglePlay() {
+            if (isPlaying) {
+                shouldStop = true;
+            } else {
+                playScale();
+            }
+        }
+
+        async function playScale() {
+            isPlaying = true;
+            shouldStop = false;
+            
+            playBtn.textContent = "◼ Stop";
+            playBtn.classList.add('stop');
+
+            const minFret = parseInt(startFretInput.value);
+            const maxFret = parseInt(endFretInput.value);
+
+            const allNotes = Array.from(document.querySelectorAll('.note-display.visible'));
+            const validNotes = allNotes.filter(n => {
+                const f = parseInt(n.dataset.fret);
+                return f >= minFret && f <= maxFret;
+            });
+
+            // Sort logic: Always Vertical (Low Strings to High Strings, then Frets)
+            validNotes.sort((a, b) => {
+                const stringA = parseInt(a.dataset.string);
+                const stringB = parseInt(b.dataset.string);
+                const fretA = parseInt(a.dataset.fret);
+                const fretB = parseInt(b.dataset.fret);
+
+                // Sort by String index (Descend: 5 -> 0 means Low E -> High E)
+                // Note: Array is [HighE(0) ... LowE(5)]
+                // We want LowE first. So higher index first.
+                if (stringA !== stringB) return stringB - stringA; 
+                return fretA - fretB;
+            });
+
+            for (let note of validNotes) {
+                if (shouldStop) break;
+
+                const freq = midiToFreq(parseInt(note.dataset.midi));
+                playTone(freq, 0.5); // Longer note duration for better decay
+                
+                note.classList.add('playing');
+                await new Promise(r => setTimeout(r, 250));
+                note.classList.remove('playing');
+            }
+
+            isPlaying = false;
+            shouldStop = false;
+            playBtn.textContent = "▶ Play";
+            playBtn.classList.remove('stop');
+        }
+
+        init();
+    </script>
+</body>
+</html>
