@@ -3,18 +3,19 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Guitar Scale Trainer - E Minor Default</title>
+    <title>Fretboard Shredder</title>
     <style>
         :root {
-            --fretboard-color: #2c241b;
-            --fret-wire-color: #c0c0c0;
-            --note-bg: #eee;
-            --note-text: #333;
-            --root-note-bg: #3498db;
+            /* ORIGINAL THEME COLORS */
+            --fretboard-color: #2c241b;  /* Dark Wood */
+            --fret-wire-color: #c0c0c0;  /* Silver */
+            --note-bg: #eee;             /* White/Grey */
+            --note-text: #333;           /* Dark Grey Text */
+            --root-note-bg: #3498db;     /* Blue */
             --root-note-text: #fff;
-            --scale-note-bg: #e74c3c;
+            --scale-note-bg: #e74c3c;    /* Red */
             --scale-note-text: #fff;
-            --playing-note-bg: #f1c40f;
+            --playing-note-bg: #f1c40f;  /* Yellow */
             --playing-note-text: #000;
             --inlay-color: rgba(255, 255, 255, 0.2);
             --box-border-color: #f1c40f;
@@ -38,14 +39,21 @@
         }
 
         h1 { margin: 5px 0; font-size: 1.5rem; }
-        p.subtitle { color: #888; margin-bottom: 15px; font-size: 0.8rem; text-align: center; }
+        
+        .status-bar {
+            font-size: 0.8rem; margin-bottom: 15px; 
+            background: #222; padding: 4px 12px; border-radius: 20px;
+            display: flex; align-items: center; gap: 8px;
+            border: 1px solid #444; color: #aaa;
+        }
+        .status-dot { width: 8px; height: 8px; border-radius: 50%; background: #2ecc71; box-shadow: 0 0 5px #2ecc71; }
 
         .controls {
             background: #333;
             padding: 10px;
             border-radius: 8px;
             display: flex;
-            gap: 10px;
+            gap: 15px;
             margin-bottom: 15px;
             box-shadow: 0 4px 6px rgba(0,0,0,0.3);
             flex-wrap: wrap;
@@ -54,14 +62,31 @@
             width: 100%;
         }
 
-        .control-group { display: flex; flex-direction: column; }
-        label { font-size: 0.7rem; margin-bottom: 2px; color: #aaa; font-weight: bold; }
+        .control-group { display: flex; flex-direction: column; min-width: 60px; }
+        label { font-size: 0.7rem; margin-bottom: 4px; color: #aaa; font-weight: bold; }
         
-        select, input { 
+        select, input[type="number"] { 
             padding: 4px 8px; font-size: 0.9rem; border-radius: 4px; border: none; 
-            cursor: pointer; height: 30px; width: 100%;
+            cursor: pointer; height: 30px; width: 100%; background: white; color: black;
         }
         input[type="number"] { width: 50px; }
+        
+        input[type="range"] {
+            -webkit-appearance: none;
+            width: 120px;
+            height: 6px;
+            background: #555;
+            border-radius: 3px;
+            outline: none;
+            margin-bottom: 10px;
+        }
+        input[type="range"]::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            width: 18px; height: 18px;
+            border-radius: 50%;
+            background: #3498db;
+            cursor: pointer;
+        }
 
         button.action-btn {
             background-color: #27ae60; color: white; border: none; padding: 0 15px;
@@ -72,7 +97,6 @@
         button.action-btn.stop { background-color: #c0392b; }
         button.action-btn.stop:hover { background-color: #e74c3c; }
 
-        /* --- FRETBOARD --- */
         .fretboard-container {
             width: 100%;
             padding-bottom: 10px;
@@ -151,10 +175,6 @@
             transform: scale(0.5); pointer-events: none;
         }
 
-        @media (max-width: 600px) {
-            .note-display { font-size: 0.6rem; }
-        }
-
         .note-display.visible { opacity: 1; transform: scale(1); }
         .note-display.playing { 
             transform: scale(1.3); background-color: var(--playing-note-bg) !important;
@@ -191,9 +211,19 @@
 </head>
 <body>
 
-    <h1>Fit-to-Screen Trainer</h1>
+    <h1>Fretboard Shredder - Guitar Scale Trainer</h1>
+    
+    <div class="status-bar">
+        <div class="status-dot"></div>
+        <span>Engine: Karplus-Strong Physics</span>
+    </div>
 
     <div class="controls">
+        <div class="control-group">
+            <label>Tuning</label>
+            <select id="tuningSelect"></select>
+        </div>
+
         <div class="control-group">
             <label>Root</label>
             <select id="rootNote"></select>
@@ -212,6 +242,27 @@
             <input type="number" id="endFret" value="12" min="0" max="24">
         </div>
 
+        <div class="control-group">
+            <label>Tone</label>
+            <select id="toneSelect">
+                <option value="clean">Clean</option>
+                <option value="dist">High Gain</option>
+            </select>
+        </div>
+
+        <div class="control-group">
+            <label>Direction</label>
+            <select id="directionSelect">
+                <option value="asc">Ascending (↑)</option>
+                <option value="desc">Descending (↓)</option>
+            </select>
+        </div>
+
+        <div class="control-group">
+            <label>Tempo: <span id="bpmDisplay">120</span> BPM</label>
+            <input type="range" id="tempoSlider" min="60" max="300" value="120">
+        </div>
+
         <button class="action-btn" id="playBtn" onclick="togglePlay()">▶ Play</button>
     </div>
 
@@ -222,43 +273,107 @@
 
     <script>
         const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-        
-        // --- REALISTIC GUITAR SYNTHESIS ---
-        function playTone(freq, duration = 0.5) {
+
+        let currentSource = null;
+        let currentGainNode = null;
+        let distortionCurve = null;
+
+        function makeDistortionCurve(amount) {
+            const k = typeof amount === 'number' ? amount : 50;
+            const n_samples = 44100;
+            const curve = new Float32Array(n_samples);
+            const deg = Math.PI / 180;
+            for (let i = 0; i < n_samples; ++i) {
+                const x = i * 2 / n_samples - 1;
+                curve[i] = (3 + k) * x * 20 * deg / (Math.PI + k * Math.abs(x));
+            }
+            return curve;
+        }
+
+        function playTone(midiNote) {
             if (audioCtx.state === 'suspended') audioCtx.resume();
-            
-            const now = audioCtx.currentTime;
-            const osc = audioCtx.createOscillator();
-            const gainNode = audioCtx.createGain();
-            const filterNode = audioCtx.createBiquadFilter();
 
-            // 1. Source: Sawtooth wave provides rich harmonics (buzz) like a string
-            osc.type = 'sawtooth';
-            osc.frequency.value = freq;
+            if (currentSource && currentGainNode) {
+                const now = audioCtx.currentTime;
+                currentGainNode.gain.cancelScheduledValues(now);
+                currentGainNode.gain.setValueAtTime(currentGainNode.gain.value, now);
+                currentGainNode.gain.exponentialRampToValueAtTime(0.001, now + 0.01);
+                currentSource.stop(now + 0.01);
+            }
 
-            // 2. Filter: Low-pass filter simulating the "pluck" damping
-            // Starts bright and rapidly closes to remove high frequencies
-            filterNode.type = 'lowpass';
-            filterNode.Q.value = 1; // Slight resonance
-            filterNode.frequency.setValueAtTime(freq * 3, now); 
-            filterNode.frequency.exponentialRampToValueAtTime(freq, now + 0.15);
+            const frequency = 440 * Math.pow(2, (midiNote - 69) / 12);
+            const sampleRate = audioCtx.sampleRate;
+            const bufferDuration = 2.0; 
+            const bufferSize = sampleRate * bufferDuration;
+            const buffer = audioCtx.createBuffer(1, bufferSize, sampleRate);
+            const data = buffer.getChannelData(0);
+            const period = Math.floor(sampleRate / frequency);
 
-            // 3. Amplitude: Fast attack, exponential decay (plucked string physics)
-            gainNode.gain.setValueAtTime(0, now);
-            gainNode.gain.linearRampToValueAtTime(0.2, now + 0.01); // Fast attack
-            gainNode.gain.exponentialRampToValueAtTime(0.001, now + duration);
+            for (let i = 0; i < period; i++) {
+                data[i] = Math.random() * 2 - 1;
+            }
+            let decay = 0.993;
+            if (frequency > 500) decay = 0.985;
 
-            // Connect graph: Osc -> Filter -> Gain -> Out
-            osc.connect(filterNode);
-            filterNode.connect(gainNode);
-            gainNode.connect(audioCtx.destination);
+            for (let i = period; i < bufferSize; i++) {
+                const prev1 = data[i - period];
+                const prev2 = data[i - period - 1] || 0;
+                data[i] = decay * 0.5 * (prev1 + prev2);
+            }
 
-            osc.start();
-            osc.stop(now + duration + 0.1);
+            const source = audioCtx.createBufferSource();
+            source.buffer = buffer;
+
+            const tone = document.getElementById('toneSelect').value;
+            const masterGain = audioCtx.createGain();
+
+            if (tone === 'dist') {
+                const tightFilter = audioCtx.createBiquadFilter();
+                tightFilter.type = 'highpass';
+                tightFilter.frequency.value = 250; 
+                tightFilter.Q.value = 0.7;
+
+                const driveGain = audioCtx.createGain();
+                driveGain.gain.value = 300; 
+
+                const shaper = audioCtx.createWaveShaper();
+                if (!distortionCurve) distortionCurve = makeDistortionCurve(1000);
+                shaper.curve = distortionCurve;
+                shaper.oversample = '4x';
+
+                const cabinetFilter = audioCtx.createBiquadFilter();
+                cabinetFilter.type = 'lowpass';
+                cabinetFilter.frequency.value = 4000; 
+                cabinetFilter.Q.value = 1.5; 
+
+                source.connect(tightFilter);
+                tightFilter.connect(driveGain);
+                driveGain.connect(shaper);
+                shaper.connect(cabinetFilter);
+                cabinetFilter.connect(masterGain);
+                masterGain.gain.value = 0.5; 
+            } else {
+                source.connect(masterGain);
+                masterGain.gain.value = 1.0;
+            }
+
+            masterGain.connect(audioCtx.destination);
+            source.start();
+
+            currentSource = source;
+            currentGainNode = masterGain;
         }
 
         const noteNames = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"];
-        const stringBaseMidi = [64, 59, 55, 50, 45, 40]; // High E (0) to Low E (5)
+        
+        const tunings = {
+            "Standard (E)": [64, 59, 55, 50, 45, 40],
+            "Drop D": [64, 59, 55, 50, 45, 38],
+            "Drop C": [62, 57, 53, 48, 43, 36], // ADDED DROP C
+            "Eb Standard": [63, 58, 54, 49, 44, 39],
+            "D Standard": [62, 57, 53, 48, 43, 38],
+            "Open G": [62, 59, 55, 50, 43, 38]
+        };
         
         const scales = {
             "Major": [0, 2, 4, 5, 7, 9, 11],
@@ -279,17 +394,18 @@
         const fretNumbersEl = document.getElementById('fretNumbers');
         const rootSelect = document.getElementById('rootNote');
         const scaleSelect = document.getElementById('scaleType');
+        const tuningSelect = document.getElementById('tuningSelect');
         const startFretInput = document.getElementById('startFret');
         const endFretInput = document.getElementById('endFret');
         const playBtn = document.getElementById('playBtn');
+        const tempoSlider = document.getElementById('tempoSlider');
+        const bpmDisplay = document.getElementById('bpmDisplay');
+        const directionSelect = document.getElementById('directionSelect');
 
         let isPlaying = false;
         let shouldStop = false;
 
-        function midiToFreq(midi) { return 440 * Math.pow(2, (midi - 69) / 12); }
-
         function init() {
-            // Populate Root Notes
             noteNames.forEach((note, index) => {
                 const option = document.createElement('option');
                 option.value = index;
@@ -298,7 +414,6 @@
                 rootSelect.appendChild(option);
             });
 
-            // Populate Scales
             for (const [name, intervals] of Object.entries(scales)) {
                 const option = document.createElement('option');
                 option.value = name;
@@ -307,20 +422,37 @@
                 scaleSelect.appendChild(option);
             }
 
+            for (const name of Object.keys(tunings)) {
+                const option = document.createElement('option');
+                option.value = name;
+                option.textContent = name;
+                tuningSelect.appendChild(option);
+            }
+
             drawFretboard();
             updateFretboard();
 
             rootSelect.addEventListener('change', updateFretboard);
             scaleSelect.addEventListener('change', updateFretboard);
+            tuningSelect.addEventListener('change', () => {
+                drawFretboard();
+                updateFretboard();
+            });
             startFretInput.addEventListener('change', updateFretboard);
             endFretInput.addEventListener('change', updateFretboard);
+            
+            tempoSlider.addEventListener('input', () => {
+                bpmDisplay.textContent = tempoSlider.value;
+            });
         }
 
         function drawFretboard() {
             fretboardEl.innerHTML = '';
             fretNumbersEl.innerHTML = '';
+            const currentTuningName = tuningSelect.value || "Standard (E)";
+            const currentBaseMidi = tunings[currentTuningName];
 
-            stringBaseMidi.forEach((baseMidi, stringIndex) => {
+            currentBaseMidi.forEach((baseMidi, stringIndex) => {
                 const stringRow = document.createElement('div');
                 stringRow.classList.add('string');
 
@@ -328,7 +460,6 @@
                     const currentMidi = baseMidi + fret;
                     const noteIndex = currentMidi % 12;
                     const noteName = noteNames[noteIndex];
-                    const frequency = midiToFreq(currentMidi);
 
                     const fretDiv = document.createElement('div');
                     fretDiv.classList.add('note-fret');
@@ -353,7 +484,7 @@
                     fretDiv.appendChild(noteDisplay);
 
                     fretDiv.addEventListener('mousedown', () => {
-                        playTone(frequency);
+                        playTone(currentMidi); 
                         noteDisplay.classList.add('playing');
                         setTimeout(() => noteDisplay.classList.remove('playing'), 150);
                     });
@@ -389,9 +520,7 @@
             allFrets.forEach(fretDiv => {
                 const fNum = parseInt(fretDiv.dataset.fret);
                 const sNum = parseInt(fretDiv.dataset.string);
-
                 fretDiv.classList.remove('in-box', 'box-left', 'box-right', 'box-top', 'box-bottom');
-
                 if (fNum >= minFret && fNum <= maxFret) {
                     fretDiv.classList.add('in-box');
                     if (fNum === minFret) fretDiv.classList.add('box-left');
@@ -404,64 +533,53 @@
             allNotes.forEach(noteEl => {
                 const noteIndex = parseInt(noteEl.dataset.noteIndex);
                 noteEl.classList.remove('visible', 'root', 'scale-note');
-
                 if (allowedIndices.includes(noteIndex)) {
                     noteEl.classList.add('visible');
-                    if (noteIndex === rootIndex) {
-                        noteEl.classList.add('root');
-                    } else {
-                        noteEl.classList.add('scale-note');
-                    }
+                    if (noteIndex === rootIndex) noteEl.classList.add('root');
+                    else noteEl.classList.add('scale-note');
                 }
             });
         }
 
         function togglePlay() {
-            if (isPlaying) {
-                shouldStop = true;
-            } else {
-                playScale();
-            }
+            if (isPlaying) shouldStop = true;
+            else playScale();
         }
 
         async function playScale() {
             isPlaying = true;
             shouldStop = false;
-            
             playBtn.textContent = "◼ Stop";
             playBtn.classList.add('stop');
 
             const minFret = parseInt(startFretInput.value);
             const maxFret = parseInt(endFretInput.value);
-
             const allNotes = Array.from(document.querySelectorAll('.note-display.visible'));
             const validNotes = allNotes.filter(n => {
                 const f = parseInt(n.dataset.fret);
                 return f >= minFret && f <= maxFret;
             });
 
-            // Sort logic: Always Vertical (Low Strings to High Strings, then Frets)
             validNotes.sort((a, b) => {
                 const stringA = parseInt(a.dataset.string);
                 const stringB = parseInt(b.dataset.string);
                 const fretA = parseInt(a.dataset.fret);
                 const fretB = parseInt(b.dataset.fret);
-
-                // Sort by String index (Descend: 5 -> 0 means Low E -> High E)
-                // Note: Array is [HighE(0) ... LowE(5)]
-                // We want LowE first. So higher index first.
                 if (stringA !== stringB) return stringB - stringA; 
                 return fretA - fretB;
             });
 
+            const dir = directionSelect.value;
+            if (dir === 'desc') validNotes.reverse();
+
             for (let note of validNotes) {
                 if (shouldStop) break;
-
-                const freq = midiToFreq(parseInt(note.dataset.midi));
-                playTone(freq, 0.5); // Longer note duration for better decay
-                
+                const midi = parseInt(note.dataset.midi);
+                const bpm = parseInt(tempoSlider.value);
+                const delayMs = 60000 / bpm; 
+                playTone(midi); 
                 note.classList.add('playing');
-                await new Promise(r => setTimeout(r, 250));
+                await new Promise(r => setTimeout(r, delayMs)); 
                 note.classList.remove('playing');
             }
 
