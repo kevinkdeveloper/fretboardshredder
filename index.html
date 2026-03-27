@@ -215,7 +215,6 @@
     
     <div class="status-bar">
         <div class="status-dot"></div>
-        <span>Engine: Karplus-Strong Physics</span>
     </div>
 
     <div class="controls">
@@ -277,48 +276,86 @@
         let currentSource = null;
         let currentGainNode = null;
         let distortionCurve = null;
+        let reverbNode = null;
+        let reverbWetGain = null;
 
+        // Tanh-based soft clipping — much more musical/tube-like than the old formula
         function makeDistortionCurve(amount) {
-            const k = typeof amount === 'number' ? amount : 50;
-            const n_samples = 44100;
-            const curve = new Float32Array(n_samples);
-            const deg = Math.PI / 180;
-            for (let i = 0; i < n_samples; ++i) {
-                const x = i * 2 / n_samples - 1;
-                curve[i] = (3 + k) * x * 20 * deg / (Math.PI + k * Math.abs(x));
+            const n = 512;
+            const curve = new Float32Array(n);
+            const k = amount / 100;
+            const norm = Math.tanh(k);
+            for (let i = 0; i < n; i++) {
+                const x = (i * 2) / n - 1;
+                curve[i] = Math.tanh(k * x) / norm;
             }
             return curve;
         }
 
+        // Convolution reverb using programmatically generated impulse response
+        function initReverb() {
+            const duration = 1.6;
+            const decay = 2.8;
+            const sr = audioCtx.sampleRate;
+            const length = Math.floor(sr * duration);
+            const impulse = audioCtx.createBuffer(2, length, sr);
+            for (let ch = 0; ch < 2; ch++) {
+                const d = impulse.getChannelData(ch);
+                for (let i = 0; i < length; i++) {
+                    // Exponentially decaying noise — standard IR approximation
+                    d[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / length, decay);
+                }
+            }
+            reverbNode = audioCtx.createConvolver();
+            reverbNode.buffer = impulse;
+            reverbWetGain = audioCtx.createGain();
+            reverbWetGain.gain.value = 0.18; // subtle room presence
+            reverbNode.connect(reverbWetGain);
+            reverbWetGain.connect(audioCtx.destination);
+        }
+
         function playTone(midiNote) {
             if (audioCtx.state === 'suspended') audioCtx.resume();
+            if (!reverbNode) initReverb();
 
+            // Smooth fade-out of previous note
             if (currentSource && currentGainNode) {
                 const now = audioCtx.currentTime;
                 currentGainNode.gain.cancelScheduledValues(now);
                 currentGainNode.gain.setValueAtTime(currentGainNode.gain.value, now);
-                currentGainNode.gain.exponentialRampToValueAtTime(0.001, now + 0.01);
-                currentSource.stop(now + 0.01);
+                currentGainNode.gain.exponentialRampToValueAtTime(0.001, now + 0.018);
+                currentSource.stop(now + 0.018);
             }
 
             const frequency = 440 * Math.pow(2, (midiNote - 69) / 12);
             const sampleRate = audioCtx.sampleRate;
-            const bufferDuration = 2.0; 
-            const bufferSize = sampleRate * bufferDuration;
+            const bufferSize = Math.floor(sampleRate * 3.5);
             const buffer = audioCtx.createBuffer(1, bufferSize, sampleRate);
             const data = buffer.getChannelData(0);
-            const period = Math.floor(sampleRate / frequency);
+            const period = Math.round(sampleRate / frequency);
 
-            for (let i = 0; i < period; i++) {
-                data[i] = Math.random() * 2 - 1;
+            // String-specific character: bass strings are warmer/slower-decaying
+            let decay, lpCoeff;
+            if (midiNote < 50) {         // Low E, A strings
+                decay = 0.9968; lpCoeff = 0.46;
+            } else if (midiNote < 62) {  // D, G strings
+                decay = 0.9930; lpCoeff = 0.34;
+            } else {                     // B, high e strings
+                decay = 0.9880; lpCoeff = 0.24;
             }
-            let decay = 0.993;
-            if (frequency > 500) decay = 0.985;
 
+            // Filtered noise burst: smoother initial transient than raw white noise
+            for (let i = 0; i < period; i++) data[i] = Math.random() * 2 - 1;
+            const pickSmooth = 0.28;
+            for (let i = 1; i < period; i++) {
+                data[i] = data[i] * (1 - pickSmooth) + data[i - 1] * pickSmooth;
+            }
+
+            // Karplus-Strong feedback loop with tuned low-pass per string
             for (let i = period; i < bufferSize; i++) {
-                const prev1 = data[i - period];
-                const prev2 = data[i - period - 1] || 0;
-                data[i] = decay * 0.5 * (prev1 + prev2);
+                const p1 = data[i - period];
+                const p2 = i - period - 1 >= 0 ? data[i - period - 1] : 0;
+                data[i] = decay * ((1 - lpCoeff) * p1 + lpCoeff * p2);
             }
 
             const source = audioCtx.createBufferSource();
@@ -328,38 +365,84 @@
             const masterGain = audioCtx.createGain();
 
             if (tone === 'dist') {
-                const tightFilter = audioCtx.createBiquadFilter();
-                tightFilter.type = 'highpass';
-                tightFilter.frequency.value = 250; 
-                tightFilter.Q.value = 0.7;
+                // High-gain chain: tight HPF → mid scoop/boost → pre-gain → tanh shaper → cab sim
+                const preHPF = audioCtx.createBiquadFilter();
+                preHPF.type = 'highpass';
+                preHPF.frequency.value = 160;
+                preHPF.Q.value = 0.6;
+
+                const midBoost = audioCtx.createBiquadFilter();
+                midBoost.type = 'peaking';
+                midBoost.frequency.value = 900;
+                midBoost.gain.value = 10;
+                midBoost.Q.value = 1.2;
 
                 const driveGain = audioCtx.createGain();
-                driveGain.gain.value = 300; 
+                driveGain.gain.value = 280;
 
                 const shaper = audioCtx.createWaveShaper();
-                if (!distortionCurve) distortionCurve = makeDistortionCurve(1000);
+                if (!distortionCurve) distortionCurve = makeDistortionCurve(500);
                 shaper.curve = distortionCurve;
                 shaper.oversample = '4x';
 
-                const cabinetFilter = audioCtx.createBiquadFilter();
-                cabinetFilter.type = 'lowpass';
-                cabinetFilter.frequency.value = 4000; 
-                cabinetFilter.Q.value = 1.5; 
+                // Multi-stage cabinet sim
+                const cabLP = audioCtx.createBiquadFilter();
+                cabLP.type = 'lowpass';
+                cabLP.frequency.value = 5500;
+                cabLP.Q.value = 0.8;
 
-                source.connect(tightFilter);
-                tightFilter.connect(driveGain);
+                const cabHP = audioCtx.createBiquadFilter();
+                cabHP.type = 'highpass';
+                cabHP.frequency.value = 100;
+                cabHP.Q.value = 0.7;
+
+                const presence = audioCtx.createBiquadFilter();
+                presence.type = 'peaking';
+                presence.frequency.value = 3500;
+                presence.gain.value = 5;
+                presence.Q.value = 2.0;
+
+                source.connect(preHPF);
+                preHPF.connect(midBoost);
+                midBoost.connect(driveGain);
                 driveGain.connect(shaper);
-                shaper.connect(cabinetFilter);
-                cabinetFilter.connect(masterGain);
-                masterGain.gain.value = 0.5; 
+                shaper.connect(cabLP);
+                cabLP.connect(cabHP);
+                cabHP.connect(presence);
+                presence.connect(masterGain);
+                masterGain.gain.value = 0.28;
             } else {
-                source.connect(masterGain);
-                masterGain.gain.value = 1.0;
+                // Clean tone: body warmth + presence boost + gentle air cut
+                const bodyWarmth = audioCtx.createBiquadFilter();
+                bodyWarmth.type = 'peaking';
+                bodyWarmth.frequency.value = 260;
+                bodyWarmth.gain.value = 4;
+                bodyWarmth.Q.value = 1.5;
+
+                const presence = audioCtx.createBiquadFilter();
+                presence.type = 'peaking';
+                presence.frequency.value = 3200;
+                presence.gain.value = 3;
+                presence.Q.value = 2.0;
+
+                const airCut = audioCtx.createBiquadFilter();
+                airCut.type = 'highshelf';
+                airCut.frequency.value = 7500;
+                airCut.gain.value = -4;
+
+                source.connect(bodyWarmth);
+                bodyWarmth.connect(presence);
+                presence.connect(airCut);
+                airCut.connect(masterGain);
+                masterGain.gain.value = 0.88;
             }
 
+            // Dry signal to output
             masterGain.connect(audioCtx.destination);
-            source.start();
+            // Wet reverb send
+            masterGain.connect(reverbNode);
 
+            source.start();
             currentSource = source;
             currentGainNode = masterGain;
         }
