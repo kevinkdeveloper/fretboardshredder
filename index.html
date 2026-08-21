@@ -96,6 +96,10 @@
         button.action-btn:hover { background-color: #2ecc71; }
         button.action-btn.stop { background-color: #c0392b; }
         button.action-btn.stop:hover { background-color: #e74c3c; }
+        button.action-btn.toggle { background-color: #555; min-width: 80px; }
+        button.action-btn.toggle:hover { background-color: #666; }
+        button.action-btn.toggle.active { background-color: #2980b9; }
+        button.action-btn.toggle.active:hover { background-color: #3498db; }
 
         .fretboard-container {
             width: 100%;
@@ -299,6 +303,7 @@
             <input type="range" id="tempoSlider" min="60" max="300" value="120">
         </div>
 
+        <button class="action-btn toggle" id="loopBtn" aria-pressed="false" onclick="toggleLoop()" title="Repeat the run until you press Stop">🔁 Loop</button>
         <button class="action-btn" id="playBtn" onclick="togglePlay()">▶ Play</button>
     </div>
 
@@ -525,6 +530,7 @@
         const startFretInput = document.getElementById('startFret');
         const endFretInput = document.getElementById('endFret');
         const playBtn = document.getElementById('playBtn');
+        const loopBtn = document.getElementById('loopBtn');
         const tempoSlider = document.getElementById('tempoSlider');
         const bpmDisplay = document.getElementById('bpmDisplay');
         const directionSelect = document.getElementById('directionSelect');
@@ -782,19 +788,20 @@
             else playScale();
         }
 
-        async function playScale() {
-            isPlaying = true;
-            shouldStop = false;
-            playBtn.textContent = "◼ Stop";
-            playBtn.classList.add('stop');
+        function toggleLoop() {
+            const on = loopBtn.classList.toggle('active');
+            loopBtn.setAttribute('aria-pressed', on);
+        }
 
-            const minFret = parseInt(startFretInput.value);
-            const maxFret = parseInt(endFretInput.value);
-            const allNotes = Array.from(document.querySelectorAll('.note-display.visible'));
-            const validNotes = allNotes.filter(n => {
-                const f = parseInt(n.dataset.fret);
-                return f >= minFret && f <= maxFret;
-            });
+        // Collected fresh before every pass, so changes made while looping
+        // (root, scale, tuning, direction, the focus window) take effect next time round.
+        function collectScaleNotes() {
+            const [minFret, maxFret] = getRange();
+            const validNotes = Array.from(document.querySelectorAll('.note-display.visible'))
+                .filter(n => {
+                    const f = parseInt(n.dataset.fret);
+                    return f >= minFret && f <= maxFret;
+                });
 
             validNotes.sort((a, b) => {
                 const stringA = parseInt(a.dataset.string);
@@ -805,19 +812,31 @@
                 return fretA - fretB;
             });
 
-            const dir = directionSelect.value;
-            if (dir === 'desc') validNotes.reverse();
+            if (directionSelect.value === 'desc') validNotes.reverse();
+            return validNotes;
+        }
 
-            for (let note of validNotes) {
-                if (shouldStop) break;
-                const midi = parseInt(note.dataset.midi);
-                const bpm = parseInt(tempoSlider.value);
-                const delayMs = 60000 / bpm; 
-                playTone(midi); 
-                note.classList.add('playing');
-                await new Promise(r => setTimeout(r, delayMs)); 
-                note.classList.remove('playing');
-            }
+        async function playScale() {
+            isPlaying = true;
+            shouldStop = false;
+            playBtn.textContent = "◼ Stop";
+            playBtn.classList.add('stop');
+
+            do {
+                const validNotes = collectScaleNotes();
+                if (validNotes.length === 0) break;   // nothing in the window: never spin
+
+                for (let note of validNotes) {
+                    if (shouldStop) break;
+                    const midi = parseInt(note.dataset.midi);
+                    const bpm = parseInt(tempoSlider.value);
+                    const delayMs = 60000 / bpm; 
+                    playTone(midi); 
+                    note.classList.add('playing');
+                    await new Promise(r => setTimeout(r, delayMs)); 
+                    note.classList.remove('playing');
+                }
+            } while (loopBtn.classList.contains('active') && !shouldStop);
 
             isPlaying = false;
             shouldStop = false;
