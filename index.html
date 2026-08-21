@@ -207,6 +207,43 @@
             border-right: 4px solid transparent;
         }
 
+        /* --- Draggable focus window --- */
+        .fretboard-container { position: relative; }
+        .fret-numbers { padding-bottom: 18px; }
+
+        .range-window {
+            position: absolute; top: 0; left: 0;
+            pointer-events: none; z-index: 50;
+        }
+
+        .range-window .rw-edge {
+            position: absolute; top: 0; width: 14px;
+            cursor: ew-resize; pointer-events: auto; touch-action: none;
+        }
+        .range-window .rw-left  { left: 0;  transform: translateX(-50%); }
+        .range-window .rw-right { right: 0; transform: translateX(50%); }
+        .range-window .rw-edge::after {
+            content: ''; position: absolute; left: 6px; top: 0; bottom: 0;
+            width: 2px; background: var(--box-border-color); opacity: 0.85;
+        }
+        .range-window .rw-edge:hover::after,
+        .range-window.dragging .rw-edge::after {
+            opacity: 1; box-shadow: 0 0 8px var(--box-border-color);
+        }
+
+        .range-window .rw-bar {
+            position: absolute; left: 0; right: 0; bottom: 0; height: 15px;
+            background: rgba(241, 196, 15, 0.22);
+            border: 1px solid var(--box-border-color);
+            border-radius: 4px;
+            display: flex; align-items: center; justify-content: center;
+            font-size: 0.6rem; font-weight: bold; letter-spacing: 1px;
+            color: var(--box-border-color);
+            cursor: grab; pointer-events: auto; touch-action: none;
+        }
+        .range-window .rw-bar:hover { background: rgba(241, 196, 15, 0.4); }
+        .range-window.dragging .rw-bar { cursor: grabbing; background: rgba(241, 196, 15, 0.45); }
+
     </style>
 </head>
 <body>
@@ -268,6 +305,12 @@
     <div class="fretboard-container">
         <div class="fretboard" id="fretboard"></div>
         <div class="fret-numbers" id="fretNumbers"></div>
+
+        <div class="range-window" id="rangeWindow">
+            <div class="rw-edge rw-left" title="Drag to move the start fret"></div>
+            <div class="rw-edge rw-right" title="Drag to move the end fret"></div>
+            <div class="rw-bar" title="Drag to slide the focus window along the neck"></div>
+        </div>
     </div>
 
     <script>
@@ -485,6 +528,10 @@
         const tempoSlider = document.getElementById('tempoSlider');
         const bpmDisplay = document.getElementById('bpmDisplay');
         const directionSelect = document.getElementById('directionSelect');
+        const rangeWindowEl = document.getElementById('rangeWindow');
+        const rwBar = rangeWindowEl.querySelector('.rw-bar');
+        const rwLeft = rangeWindowEl.querySelector('.rw-left');
+        const rwRight = rangeWindowEl.querySelector('.rw-right');
 
         let isPlaying = false;
         let shouldStop = false;
@@ -522,8 +569,18 @@
                 drawFretboard();
                 updateFretboard();
             });
-            startFretInput.addEventListener('change', updateFretboard);
-            endFretInput.addEventListener('change', updateFretboard);
+            startFretInput.addEventListener('change', () => setRange(readFret(startFretInput), readFret(endFretInput)));
+            endFretInput.addEventListener('change', () => setRange(readFret(startFretInput), readFret(endFretInput)));
+
+            rwBar.addEventListener('pointerdown', e => beginRangeDrag(e, 'move'));
+            rwLeft.addEventListener('pointerdown', e => beginRangeDrag(e, 'left'));
+            rwRight.addEventListener('pointerdown', e => beginRangeDrag(e, 'right'));
+            [rwBar, rwLeft, rwRight].forEach(el => el.addEventListener('lostpointercapture', endRangeDrag));
+            window.addEventListener('pointermove', moveRangeDrag);
+            window.addEventListener('pointerup', endRangeDrag);
+            window.addEventListener('pointercancel', endRangeDrag);
+            window.addEventListener('resize', positionRangeWindow);
+            window.addEventListener('load', positionRangeWindow);
             
             tempoSlider.addEventListener('input', () => {
                 bpmDisplay.textContent = tempoSlider.value;
@@ -623,6 +680,101 @@
                     else noteEl.classList.add('scale-note');
                 }
             });
+
+            positionRangeWindow();
+        }
+
+        /* ---------- Draggable focus window ---------- */
+        let dragMode = null;          // 'move' | 'left' | 'right'
+        let dragCaptureEl = null;
+        let dragFretRects = [];
+        let dragStartFret = 0, dragStartMin = 0, dragStartMax = 0;
+        let appliedMin = null, appliedMax = null;   // range currently painted on the board
+
+        function readFret(input) {
+            const v = parseInt(input.value);
+            return isNaN(v) ? 0 : v;
+        }
+
+        function getRange() {
+            return [readFret(startFretInput), readFret(endFretInput)];
+        }
+
+        function setRange(min, max) {
+            min = Math.max(0, Math.min(numberOfFrets, min));
+            max = Math.max(min, Math.min(numberOfFrets, max));
+            startFretInput.value = min;
+            endFretInput.value = max;
+            if (min === appliedMin && max === appliedMax) return;   // skip redundant repaints mid-drag
+            appliedMin = min;
+            appliedMax = max;
+            updateFretboard();
+        }
+
+        function positionRangeWindow() {
+            const firstString = fretboardEl.firstElementChild;
+            if (!firstString) return;
+            const [minFret, maxFret] = getRange();
+            const startCell = firstString.querySelector('.note-fret[data-fret="' + minFret + '"]');
+            const endCell = firstString.querySelector('.note-fret[data-fret="' + maxFret + '"]');
+            if (!startCell || !endCell) return;
+
+            const containerRect = fretboardEl.parentElement.getBoundingClientRect();
+            const startRect = startCell.getBoundingClientRect();
+            const endRect = endCell.getBoundingClientRect();
+
+            rangeWindowEl.style.left = (startRect.left - containerRect.left) + 'px';
+            rangeWindowEl.style.width = (endRect.right - startRect.left) + 'px';
+            rangeWindowEl.style.height = (fretboardEl.offsetHeight + fretNumbersEl.offsetHeight) + 'px';
+            rwLeft.style.height = fretboardEl.offsetHeight + 'px';
+            rwRight.style.height = fretboardEl.offsetHeight + 'px';
+            rwBar.textContent = minFret + ' \u2013 ' + maxFret;
+        }
+
+        function fretAtClientX(clientX) {
+            for (let i = 0; i < dragFretRects.length; i++) {
+                if (clientX < dragFretRects[i].right) return i;
+            }
+            return dragFretRects.length - 1;
+        }
+
+        function beginRangeDrag(e, mode) {
+            const firstString = fretboardEl.firstElementChild;
+            if (!firstString || dragMode || e.button !== 0) return;
+            e.preventDefault();
+            dragFretRects = Array.from(firstString.querySelectorAll('.note-fret'))
+                                 .map(cell => cell.getBoundingClientRect());
+            dragMode = mode;
+            [dragStartMin, dragStartMax] = getRange();
+            dragStartFret = fretAtClientX(e.clientX);
+            rangeWindowEl.classList.add('dragging');
+            dragCaptureEl = e.currentTarget;
+            dragCaptureEl.setPointerCapture(e.pointerId);
+        }
+
+        function moveRangeDrag(e) {
+            if (!dragMode) return;
+            const fret = fretAtClientX(e.clientX);
+            if (dragMode === 'move') {
+                const span = dragStartMax - dragStartMin;
+                let newMin = dragStartMin + (fret - dragStartFret);
+                newMin = Math.max(0, Math.min(numberOfFrets - span, newMin));
+                setRange(newMin, newMin + span);
+            } else if (dragMode === 'left') {
+                setRange(Math.min(fret, dragStartMax), dragStartMax);
+            } else {
+                setRange(dragStartMin, Math.max(fret, dragStartMin));
+            }
+        }
+
+        function endRangeDrag(e) {
+            if (!dragMode) return;
+            dragMode = null;
+            rangeWindowEl.classList.remove('dragging');
+            if (dragCaptureEl && dragCaptureEl.hasPointerCapture(e.pointerId)) {
+                dragCaptureEl.releasePointerCapture(e.pointerId);
+            }
+            dragCaptureEl = null;
         }
 
         function togglePlay() {
