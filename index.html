@@ -306,14 +306,6 @@
         </div>
 
         <div class="control-group">
-            <label>Direction</label>
-            <select id="directionSelect">
-                <option value="asc">Ascending (↑)</option>
-                <option value="desc">Descending (↓)</option>
-            </select>
-        </div>
-
-        <div class="control-group">
             <label for="tempoInput">Tempo (BPM)</label>
             <div class="tempo-row">
                 <input type="range" id="tempoSlider" min="60" max="300" value="120" aria-label="Tempo slider">
@@ -496,7 +488,6 @@
         const loopBtn = document.getElementById('loopBtn');
         const tempoSlider = document.getElementById('tempoSlider');
         const tempoInput = document.getElementById('tempoInput');
-        const directionSelect = document.getElementById('directionSelect');
         const rangeWindowEl = document.getElementById('rangeWindow');
         const rwBar = rangeWindowEl.querySelector('.rw-bar');
         const rwLeft = rangeWindowEl.querySelector('.rw-left');
@@ -940,7 +931,7 @@
         }
 
         // Collected fresh before every pass, so changes made while looping
-        // (root, scale, tuning, direction, the focus window) take effect next time round.
+        // (root, scale, tuning, the focus window) take effect next time round.
         function collectScaleNotes() {
             const [minFret, maxFret] = getRange();
             const validNotes = Array.from(document.querySelectorAll('.note-display.visible:not(.dim)'))
@@ -958,7 +949,6 @@
                 return fretA - fretB;
             });
 
-            if (directionSelect.value === 'desc') validNotes.reverse();
             return validNotes;
         }
 
