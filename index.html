@@ -212,6 +212,34 @@
             border-right: 4px solid transparent;
         }
 
+        .top-bar { display: flex; flex-direction: column; align-items: center; width: 100%; }
+
+        /* ---------- Scales / Chords tabs ---------- */
+        .mode-tabs {
+            display: inline-flex; background: #2a2a2a; border: 1px solid #444;
+            border-radius: 8px; padding: 3px; gap: 3px; margin-bottom: 14px;
+        }
+        .mode-tab {
+            background: transparent; color: #bbb; border: none; border-radius: 6px;
+            padding: 8px 22px; font-family: inherit; font-size: 0.95rem; font-weight: bold; cursor: pointer;
+        }
+        .mode-tab:hover { color: #fff; }
+        .mode-tab.active { background: var(--accent); color: var(--accent-text); }
+        body.mode-scales .chords-only, body.mode-chords .scales-only { display: none !important; }
+
+        .chord-info { width: 100%; margin: -4px 0 10px; font-size: 0.85rem; color: #aaa; min-height: 1.2em; }
+        .chord-info strong { color: #eee; }
+        .chord-info .shape-order { color: #777; }
+        .chord-info .tab-shape { font-family: ui-monospace, Menlo, Consolas, monospace; color: var(--accent); letter-spacing: 1px; }
+
+        /* Strings left out of a chord shape get an X at the nut */
+        .note-fret.nut.muted::before {
+            content: '\00d7'; position: absolute; inset: 0; display: flex;
+            align-items: center; justify-content: center; z-index: 5;
+            color: #e07a5f; font-size: 1.2rem; font-weight: bold; pointer-events: none;
+        }
+        .note-fret.nut.muted .note-display { opacity: 0 !important; }
+
         /* --- Draggable focus window --- */
         .fretboard-container { position: relative; }
 
@@ -296,7 +324,9 @@
         /* ---------- Phones (portrait) ---------- */
         @media (max-width: 700px) and (min-height: 501px) {
             body { padding: 12px 12px 24px; }
-            h1 { font-size: 1.15rem; margin: 2px 0 12px; text-align: center; }
+            h1 { font-size: 1.15rem; margin: 2px 0 10px; text-align: center; }
+            .mode-tabs { margin-bottom: 10px; }
+            .mode-tab { padding: 8px 28px; font-size: 1rem; }
 
             /* Controls as a tidy two-column grid with thumb-sized targets */
             .controls {
@@ -304,7 +334,8 @@
                 align-items: end; padding: 12px;
             }
             .control-group { min-width: 0; }
-            .control-group:has(#scaleType), .control-group:has(#tempoInput) { grid-column: 1 / -1; }
+            .control-group:has(#scaleType), .control-group:has(#chordType),
+            .control-group:has(#tempoInput) { grid-column: 1 / -1; }
             label { font-size: 0.75rem; }
             /* 16px text stops iPhones zooming in when a box is tapped */
             select, input[type="number"] { height: 40px; font-size: 16px; }
@@ -348,6 +379,13 @@
         @media (max-height: 500px) and (orientation: landscape) {
             body { padding: 6px 16px 16px; }
             h1 { font-size: 0.95rem; margin: 0 0 6px; }
+            /* title and tabs share one row */
+            .top-bar { flex-direction: row; justify-content: center; gap: 16px; margin-bottom: 6px; }
+            .top-bar h1 { margin: 0; }
+            .mode-tabs { margin-bottom: 0; padding: 2px; }
+            .mode-tab { padding: 3px 14px; font-size: 0.8rem; }
+            .chord-info { margin: -2px 0 4px; font-size: 0.75rem; }
+            .chord-info .shape-order { display: none; }
             .controls { padding: 6px 10px; gap: 8px; margin-bottom: 6px; flex-wrap: nowrap; }
             .control-group { min-width: 0; }
             label { margin-bottom: 2px; font-size: 0.65rem; }
@@ -356,7 +394,8 @@
             .tempo-row input[type="range"] { width: clamp(56px, 10vw, 110px); }
             .tempo-row input[type="number"] { width: 58px; }
             .control-group:has(#tempoInput) { flex: 0 0 auto; }
-            .control-group:has(#tuningSelect), .control-group:has(#scaleType) { flex: 1 1 0; }
+            .control-group:has(#tuningSelect), .control-group:has(#scaleType),
+            .control-group:has(#chordType) { flex: 1 1 0; }
             button.action-btn { height: 34px; min-width: 0; padding: 0 12px; white-space: nowrap; }
             .shape-bar { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; margin-bottom: 6px; }
             .shape-bar::-webkit-scrollbar { display: none; }
@@ -369,7 +408,14 @@
 </head>
 <body>
 
-    <h1>Fretboard Shredder - Guitar Scale Trainer</h1>
+    <div class="top-bar">
+        <h1>Fretboard Shredder - Guitar Scale &amp; Chord Trainer</h1>
+
+        <div class="mode-tabs" role="tablist" aria-label="Practice mode">
+            <button class="mode-tab active" role="tab" aria-selected="true" data-mode="scales">Scales</button>
+            <button class="mode-tab" role="tab" aria-selected="false" data-mode="chords">Chords</button>
+        </div>
+    </div>
     
     <div class="controls">
         <div class="control-group">
@@ -381,9 +427,13 @@
             <label>Root</label>
             <select id="rootNote"></select>
         </div>
-        <div class="control-group">
+        <div class="control-group scales-only">
             <label>Scale</label>
             <select id="scaleType"></select>
+        </div>
+        <div class="control-group chords-only">
+            <label>Chord</label>
+            <select id="chordType"></select>
         </div>
         
         <div class="control-group">
@@ -404,6 +454,7 @@
         <!-- Numbered shape buttons are added by the script: one per position up to fret 24 -->
         <span class="shape-note" id="shapeNote" hidden>Shapes are available in Standard, E♭ Standard and D Standard tuning</span>
     </div>
+    <p class="chord-info chords-only" id="chordInfo"></p>
 
     <div class="fretboard-scroll" id="fretboardScroll">
     <div class="fretboard-container">
@@ -422,8 +473,7 @@
     <script>
         const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
 
-        let currentSource = null;
-        let currentGainNode = null;
+        let activeVoices = [];   // notes currently sounding: { source, gain }
         let reverbNode = null;
         let reverbWetGain = null;
 
@@ -449,18 +499,27 @@
             reverbWetGain.connect(audioCtx.destination);
         }
 
-        function playTone(midiNote) {
+        // Quickly fade out everything that's still ringing
+        function silenceAll() {
+            const now = audioCtx.currentTime;
+            activeVoices.forEach(({ source, gain }) => {
+                try {
+                    gain.gain.cancelScheduledValues(now);
+                    gain.gain.setValueAtTime(gain.gain.value, now);
+                    gain.gain.exponentialRampToValueAtTime(0.001, now + 0.018);
+                    source.stop(now + 0.018);
+                } catch (e) { /* already stopped */ }
+            });
+            activeVoices = [];
+        }
+
+        // keepRinging: let earlier notes keep sounding (used to strum a chord)
+        function playTone(midiNote, keepRinging = false) {
             if (audioCtx.state === 'suspended') audioCtx.resume();
             if (!reverbNode) initReverb();
 
-            // Smooth fade-out of previous note
-            if (currentSource && currentGainNode) {
-                const now = audioCtx.currentTime;
-                currentGainNode.gain.cancelScheduledValues(now);
-                currentGainNode.gain.setValueAtTime(currentGainNode.gain.value, now);
-                currentGainNode.gain.exponentialRampToValueAtTime(0.001, now + 0.018);
-                currentSource.stop(now + 0.018);
-            }
+            // Smooth fade-out of the previous note(s)
+            if (!keepRinging) silenceAll();
 
             const frequency = 440 * Math.pow(2, (midiNote - 69) / 12);
             const sampleRate = audioCtx.sampleRate;
@@ -527,9 +586,13 @@
             // Wet reverb send
             masterGain.connect(reverbNode);
 
+            // Strummed notes sound together, so each one is quieter
+            if (keepRinging) masterGain.gain.value *= 0.42;
+
             source.start();
-            currentSource = source;
-            currentGainNode = masterGain;
+            const voice = { source, gain: masterGain };
+            activeVoices.push(voice);
+            source.onended = () => { activeVoices = activeVoices.filter(v => v !== voice); };
         }
 
         const noteNames = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"];
@@ -603,6 +666,174 @@
         let isPlaying = false;
         let shouldStop = false;
 
+        /* ---------- Scales / Chords mode ---------- */
+        let mode = 'scales';
+        const chordSelect = document.getElementById('chordType');
+        const chordInfo = document.getElementById('chordInfo');
+        const modeTabs = Array.from(document.querySelectorAll('.mode-tab'));
+        let activeMuted = [];   // strings (display index) left out of the selected chord shape
+
+        const CHORD_TYPES = {
+            "Major":            { iv: [0, 4, 7] },
+            "Minor":            { iv: [0, 3, 7] },
+            "7":                { iv: [0, 4, 7, 10], optional: [7] },
+            "Major 7":          { iv: [0, 4, 7, 11], optional: [7] },
+            "Minor 7":          { iv: [0, 3, 7, 10], optional: [7] },
+            "6":                { iv: [0, 4, 7, 9], optional: [7] },
+            "Minor 6":          { iv: [0, 3, 7, 9], optional: [7] },
+            "9":                { iv: [0, 4, 7, 10, 2], optional: [7] },
+            "Add 9":            { iv: [0, 4, 7, 2], optional: [7] },
+            "Sus 2":            { iv: [0, 2, 7] },
+            "Sus 4":            { iv: [0, 5, 7] },
+            "Diminished":       { iv: [0, 3, 6] },
+            "Diminished 7":     { iv: [0, 3, 6, 9] },
+            "Minor 7♭5":   { iv: [0, 3, 6, 10] },
+            "Augmented":        { iv: [0, 4, 8] },
+            "5 (Power chord)":  { iv: [0, 7], power: true }
+        };
+
+        function chordVoicings(open, root, type, maxFret = 24) {
+            const def = CHORD_TYPES[type];
+            const pc = p => ((p % 12) + 12) % 12;
+            const tones = def.iv.map(i => pc(root + i));
+            const required = def.iv.filter(i => !(def.optional || []).includes(i)).map(i => pc(root + i));
+            const nStr = open.length;
+            const best = new Map();   // key -> {frets, score}
+
+            for (let w = 1; w <= maxFret - 3; w++) {
+                // Options per string: muted, open (only near the nut), or a chord tone in frets w..w+3
+                const opts = open.map(o => {
+                    const list = [-1];
+                    if (w <= 3 && tones.includes(pc(o))) list.push(0);
+                    for (let f = w; f <= w + 3 && f <= maxFret; f++) if (tones.includes(pc(o + f))) list.push(f);
+                    return list;
+                });
+                const cur = new Array(nStr);
+                (function rec(s) {
+                    if (s === nStr) { consider(cur.slice()); return; }
+                    for (const f of opts[s]) { cur[s] = f; rec(s + 1); }
+                })(0);
+            }
+
+            function consider(frets) {
+                const played = frets.map((f, s) => f >= 0 ? s : -1).filter(s => s >= 0);
+                if (played.length === 0) return;
+                const lo = played[0], hi = played[played.length - 1];
+                // Strings between the lowest and highest played string must all be played
+                if (played.length !== hi - lo + 1) return;
+                if (def.power) { if (played.length < 2 || played.length > 3 || lo > 2) return; }
+                else if (played.length < 4) return;
+                // Root in the bass
+                if (pc(open[lo] + frets[lo]) !== pc(root)) return;
+                const notes = played.map(s => pc(open[s] + frets[s]));
+                if (!required.every(t => notes.includes(t))) return;
+                // Power chords: only root and fifth, in that order up from the bass
+                if (def.power && notes.some(n => !tones.includes(n))) return;
+
+                const fretted = played.filter(s => frets[s] > 0);
+                const fr = fretted.map(s => frets[s]);
+                const minF = fr.length ? Math.min(...fr) : 0, maxF = fr.length ? Math.max(...fr) : 0;
+                if (maxF - minF > 3) return;
+                // Open strings only alongside low-position shapes
+                if (played.some(s => frets[s] === 0) && maxF > 4) return;
+
+                // Fingers: a barre at the lowest fret counts as one finger
+                const atMin = fretted.filter(s => frets[s] === minF);
+                let fingers = fretted.length;
+                let barre = false;
+                if (atMin.length >= 2 && fretted.length > 4 - 0) {
+                    // need a barre: every played string from the first to last barred string must be at >= minF
+                    const a = atMin[0], b = atMin[atMin.length - 1];
+                    for (let s = a; s <= b; s++) if (frets[s] >= 0 && frets[s] < minF) return;
+                    fingers = fretted.length - atMin.length + 1;
+                    barre = true;
+                } else if (atMin.length >= 2) {
+                    // barre optional; use it if it lowers the finger count below 5
+                    const a = atMin[0], b = atMin[atMin.length - 1];
+                    let ok = true;
+                    for (let s = a; s <= b; s++) if (frets[s] >= 0 && frets[s] < minF) ok = false;
+                    if (fingers > 4 && ok) { fingers = fretted.length - atMin.length + 1; barre = true; }
+                }
+                if (fingers > 4) return;
+
+                // Score: fuller chords, bass on a low string, doubled root, easy fingering
+                let score = played.length * 3;
+                if (lo === 0) score += 3; else if (lo === 1) score += 2;
+                score += notes.filter(n => n === pc(root)).length;
+                if (notes.length && def.iv.length >= 3 && !notes.includes(pc(root + 7)) && tones.includes(pc(root + 7))) score -= 2;
+                score -= fingers * 0.5 + (maxF - minF) * 0.7;
+                if (barre) score -= 0.5;
+                // Familiar open chords near the nut get a boost
+                if (played.some(s => frets[s] === 0) && fingers <= 3) score += 2;
+                // Leaving the top string unplayed is less common for full chords
+                if (!def.power && hi < nStr - 1) score -= 1;
+                // the top string should not be a muted gap in a low-position chord
+                const pos = fr.length ? minF : 0;
+                const key = frets.join(',');
+                if (!best.has(key)) best.set(key, { frets, score, pos, lo, maxF });
+            }
+
+            // Keep the best shape per position, then thin to a spread up the neck
+            const all = [...best.values()].sort((a, b) => b.score - a.score);
+            const byPos = new Map();
+            for (const v of all) {
+                const p = v.frets.some(f => f === 0) ? 0 : v.pos;
+                if (!byPos.has(p)) byPos.set(p, v);
+            }
+            let list = [...byPos.values()].sort((a, b) => a.pos - b.pos || b.score - a.score);
+            // Drop weak shapes that sit right next to a stronger one
+            const kept = [];
+            for (const v of list) {
+                const near = kept.find(k => Math.abs(k.pos - v.pos) <= 1);
+                if (near) { if (v.score > near.score) kept[kept.indexOf(near)] = v; }
+                else kept.push(v);
+            }
+            return kept.sort((a, b) => a.pos - b.pos);
+        }
+
+        // Chord shapes in the same form as scale shapes, plus which strings are muted
+        function chordShapes() {
+            const open = tunings[tuningSelect.value].slice().reverse();
+            return chordVoicings(open, parseInt(rootSelect.value), chordSelect.value, numberOfFrets).map(v => {
+                const notes = [], muted = [];
+                v.frets.forEach((f, st) => { if (f >= 0) notes.push([st, f]); else muted.push(st); });
+                const frets = notes.map(([, f]) => f);
+                return { notes, muted, frets: v.frets, lo: Math.min(...frets), hi: Math.max(...frets) };
+            });
+        }
+
+        function setMode(newMode) {
+            if (newMode === mode) return;
+            mode = newMode;
+            document.body.classList.toggle('mode-scales', mode === 'scales');
+            document.body.classList.toggle('mode-chords', mode === 'chords');
+            modeTabs.forEach(t => {
+                const on = t.dataset.mode === mode;
+                t.classList.toggle('active', on);
+                t.setAttribute('aria-selected', on);
+            });
+            if (isPlaying) shouldStop = true;
+            loopBtn.title = mode === 'chords'
+                ? 'Repeat the chord until you press Stop'
+                : 'Play up and back down the run until you press Stop';
+            // Chords open on their first shape; scales open on the full neck
+            selectShape(mode === 'chords' ? 0 : null);
+        }
+
+        function updateChordInfo() {
+            if (mode !== 'chords') return;
+            const root = parseInt(rootSelect.value);
+            const def = CHORD_TYPES[chordSelect.value];
+            const names = def.iv.map(i => noteNames[(root + i) % 12]);
+            const chordName = def.power ? noteNames[root] + '5 power chord' : noteNames[root] + ' ' + chordSelect.value;
+            let text = '<strong>' + chordName + '</strong>: ' + names.join(' \u00b7 ');
+            if (activeShape !== null) {
+                const sh = allShapes()[activeShape];
+                if (sh) text += ' &nbsp; Shape <span class="tab-shape">' + sh.frets.map(f => f < 0 ? 'x' : f).join(' ') + '</span> <span class="shape-order">(lowest string \u2192 highest)</span>';
+            }
+            chordInfo.innerHTML = text;
+        }
+
         /* ---------- Scale shapes ---------- */
         const shapeBar = document.getElementById('shapeBar');
         const fullNeckBtn = shapeBar.querySelector('.shape-btn[data-shape="all"]');
@@ -669,6 +900,7 @@
         // Every complete position of the five shapes between the nut and fret 24, in order
         // up the neck. The pattern repeats every five: shape 6 is shape 1 an octave higher.
         function allShapes() {
+            if (mode === 'chords') return chordShapes();
             if (!shapesSupported()) return [];
             const open = tunings[tuningSelect.value].slice().reverse();
             const root = parseInt(rootSelect.value);
@@ -687,7 +919,7 @@
         }
 
         function updateShapeButtons() {
-            const supported = shapesSupported();
+            const supported = mode === 'chords' || shapesSupported();
             const shapes = allShapes();
             shapeNote.hidden = supported;
             fullNeckBtn.classList.toggle('active', activeShape === null);
@@ -732,13 +964,16 @@
             if (k !== null && k >= shapes.length) k = shapes.length ? shapes.length - 1 : null;
             activeShape = k;
             activeShapeKeys = null;
+            activeMuted = [];
             if (k !== null) {
                 const sh = shapes[k];
                 activeShapeKeys = new Set(sh.notes.map(([s, f]) => (5 - s) + '-' + f));
+                activeMuted = (sh.muted || []).map(st => 5 - st);
                 setRange(sh.lo, sh.hi, true);
             }
             updateShapeButtons();
             updateFretboard();
+            updateChordInfo();
             if (k !== null) revealRange();
         }
 
@@ -764,6 +999,15 @@
                 scaleSelect.appendChild(option);
             }
 
+            for (const name of Object.keys(CHORD_TYPES)) {
+                const option = document.createElement('option');
+                option.value = name;
+                option.textContent = name;
+                chordSelect.appendChild(option);
+            }
+            document.body.classList.add('mode-scales');
+            modeTabs.forEach(t => t.addEventListener('click', () => setMode(t.dataset.mode)));
+
             for (const name of Object.keys(tunings)) {
                 const option = document.createElement('option');
                 option.value = name;
@@ -776,6 +1020,7 @@
 
             rootSelect.addEventListener('change', refreshShape);
             scaleSelect.addEventListener('change', refreshShape);
+            chordSelect.addEventListener('change', refreshShape);
             tuningSelect.addEventListener('change', () => {
                 drawFretboard();
                 refreshShape();
@@ -896,8 +1141,7 @@
 
         function updateFretboard() {
             const rootIndex = parseInt(rootSelect.value);
-            const scaleName = scaleSelect.value;
-            const intervals = scales[scaleName];
+            const intervals = mode === 'chords' ? CHORD_TYPES[chordSelect.value].iv : scales[scaleSelect.value];
             const allowedIndices = intervals.map(interval => (rootIndex + interval) % 12);
             
             const [minFret, maxFret] = getRange();
@@ -907,7 +1151,8 @@
             allFrets.forEach(fretDiv => {
                 const fNum = parseInt(fretDiv.dataset.fret);
                 const sNum = parseInt(fretDiv.dataset.string);
-                fretDiv.classList.remove('in-box', 'box-left', 'box-right', 'box-top', 'box-bottom');
+                fretDiv.classList.remove('in-box', 'box-left', 'box-right', 'box-top', 'box-bottom', 'muted');
+                if (fNum === 0 && activeMuted.includes(sNum)) fretDiv.classList.add('muted');
                 if (fNum >= minFret && fNum <= maxFret) {
                     fretDiv.classList.add('in-box');
                     if (fNum === minFret) fretDiv.classList.add('box-left');
@@ -956,7 +1201,9 @@
             if (!fromShape && activeShape !== null) {
                 activeShape = null;
                 activeShapeKeys = null;
+                activeMuted = [];
                 updateShapeButtons();
+                updateChordInfo();
             }
             updateFretboard();
         }
@@ -1091,11 +1338,47 @@
             return validNotes;
         }
 
+        const wait = ms => new Promise(r => setTimeout(r, ms));
+        const beatMs = () => 60000 / parseInt(tempoSlider.value);
+
+        // Chord shape: strum it, let it ring, then play each note low to high. Loop repeats.
+        async function playChordShape() {
+            do {
+                const notes = collectScaleNotes();   // the shape's notes, low string to high
+                if (notes.length === 0) break;
+                // Strum: notes 35 ms apart, all left ringing
+                for (const note of notes) {
+                    if (shouldStop) break;
+                    playTone(parseInt(note.dataset.midi), true);
+                    note.classList.add('playing');
+                    await wait(35);
+                }
+                if (notes[0]) revealNote(notes[0]);
+                await wait(beatMs() * 2);
+                notes.forEach(n => n.classList.remove('playing'));
+                if (shouldStop) break;
+                // Arpeggio: one note per beat
+                for (const note of notes) {
+                    if (shouldStop) break;
+                    playTone(parseInt(note.dataset.midi));
+                    note.classList.add('playing');
+                    await wait(beatMs());
+                    note.classList.remove('playing');
+                }
+            } while (loopBtn.classList.contains('active') && !shouldStop);
+        }
+
         async function playScale() {
             isPlaying = true;
             shouldStop = false;
             playBtn.textContent = "◼ Stop";
             playBtn.classList.add('stop');
+
+            if (mode === 'chords' && activeShape !== null) {
+                await playChordShape();
+                silenceAllWhenStopped();
+                return finishPlayback();
+            }
 
             // When looping, alternate direction each pass (up, down, up, ...) so the
             // run turns around at each end instead of jumping back to the start.
@@ -1122,6 +1405,15 @@
                 }
             } while (loopBtn.classList.contains('active') && !shouldStop);
 
+            finishPlayback();
+        }
+
+        function silenceAllWhenStopped() {
+            if (shouldStop) silenceAll();
+        }
+
+        function finishPlayback() {
+            document.querySelectorAll('.note-display.playing').forEach(n => n.classList.remove('playing'));
             isPlaying = false;
             shouldStop = false;
             playBtn.textContent = "▶ Play";
