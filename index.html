@@ -153,16 +153,15 @@
             z-index: 10;
         }
 
-        .note-fret.single-fretmark::after {
-            content: ''; position: absolute; background: var(--inlay-color);
-            width: 1.5vw; height: 1.5vw; max-width: 12px; max-height: 12px;
-            border-radius: 50%; z-index: 0;
-        }
-        .note-fret.double-fretmark::after { 
-            content: ''; position: absolute; background: var(--inlay-color);
-            width: 1.5vw; height: 1.5vw; max-width: 12px; max-height: 12px;
-            border-radius: 50%;
-            box-shadow: 0 -20px 0 var(--inlay-color); z-index: 0;
+        /* Pearl inlays sit between the strings, like on a real neck:
+           one dot between the G and D strings, two dots at frets 12 and 24 */
+        .note-fret.inlay::after {
+            content: ''; position: absolute; left: 50%; bottom: 0;
+            width: clamp(6px, 1vw, 12px); height: clamp(6px, 1vw, 12px);
+            transform: translate(-50%, 50%);
+            border-radius: 50%; z-index: 1; pointer-events: none;
+            background: radial-gradient(circle at 35% 35%, #b9ab90 0%, #8c7f68 60%, #6b604e 100%);
+            box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.4), 0 0 6px rgba(242, 163, 58, 0.15);
         }
 
         .note-display {
@@ -205,6 +204,7 @@
             border-right: 2px solid transparent; padding-top: 3px;
             min-width: 0;
         }
+        .fret-number.marker { color: #d8d2c4; font-weight: bold; }
         .fret-number-spacer {
             flex: 0 0 35px;
             border-right: 4px solid transparent;
@@ -483,6 +483,8 @@
         };
 
         const numberOfFrets = 24;
+        const singleInlayFrets = [3, 5, 7, 9, 15, 17, 19, 21];
+        const doubleInlayFrets = [12, 24];
         const fretboardEl = document.getElementById('fretboard');
         const fretNumbersEl = document.getElementById('fretNumbers');
         const rootSelect = document.getElementById('rootNote');
@@ -718,10 +720,10 @@
                     fretDiv.dataset.fret = fret;
                     fretDiv.dataset.string = stringIndex;
 
-                    if (stringIndex === 2 || stringIndex === 3) {
-                        if ([3, 5, 7, 9, 15, 17, 19, 21].includes(fret)) fretDiv.classList.add('single-fretmark');
-                        if (fret === 12 || fret === 24) fretDiv.classList.add('double-fretmark');
-                    }
+                    // Inlay dots: each is drawn on the lower edge of a string row, so it lands
+                    // in the gap between that string and the next one down.
+                    if (singleInlayFrets.includes(fret) && stringIndex === 2) fretDiv.classList.add('inlay');
+                    if (doubleInlayFrets.includes(fret) && (stringIndex === 1 || stringIndex === 3)) fretDiv.classList.add('inlay');
 
                     const noteDisplay = document.createElement('div');
                     noteDisplay.classList.add('note-display');
@@ -752,6 +754,7 @@
                 const numDiv = document.createElement('div');
                 numDiv.classList.add('fret-number');
                 numDiv.textContent = i;
+                if (singleInlayFrets.includes(i) || doubleInlayFrets.includes(i)) numDiv.classList.add('marker');
                 fretNumbersEl.appendChild(numDiv);
             }
         }
