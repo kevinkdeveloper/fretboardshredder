@@ -11,15 +11,18 @@
             --fret-wire-color: #c0c0c0;  /* Silver */
             --note-bg: #eee;             /* White/Grey */
             --note-text: #333;           /* Dark Grey Text */
-            --root-note-bg: #3498db;     /* Blue */
-            --root-note-text: #fff;
-            --scale-note-bg: #e74c3c;    /* Red */
-            --scale-note-text: #fff;
-            --playing-note-bg: #f1c40f;  /* Yellow */
-            --playing-note-text: #000;
+            --root-note-bg: #f2a33a;     /* Amber accent */
+            --root-note-text: #1e1608;
+            --scale-note-bg: #d8d2c4;    /* Soft off-white */
+            --scale-note-text: #2a2520;
+            --playing-note-bg: #ffffff;  /* Bright white while playing */
+            --playing-note-text: #1e1608;
             --inlay-color: rgba(255, 255, 255, 0.2);
-            --box-border-color: #f1c40f;
-            --box-bg-tint: rgba(241, 196, 15, 0.1);
+            --box-border-color: #f2a33a;
+            --box-bg-tint: rgba(242, 163, 58, 0.12);
+            --accent: #f2a33a;
+            --accent-hover: #f6b65c;
+            --accent-text: #1e1608;
         }
 
         * { box-sizing: border-box; }
@@ -46,7 +49,7 @@
             display: flex; align-items: center; gap: 8px;
             border: 1px solid #444; color: #aaa;
         }
-        .status-dot { width: 8px; height: 8px; border-radius: 50%; background: #2ecc71; box-shadow: 0 0 5px #2ecc71; }
+        .status-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--accent); box-shadow: 0 0 5px var(--accent); }
 
         .controls {
             background: #333;
@@ -87,22 +90,22 @@
             -webkit-appearance: none;
             width: 18px; height: 18px;
             border-radius: 50%;
-            background: #3498db;
+            background: var(--accent);
             cursor: pointer;
         }
 
         button.action-btn {
-            background-color: #27ae60; color: white; border: none; padding: 0 15px;
+            background-color: var(--accent); color: var(--accent-text); border: none; padding: 0 15px;
             font-size: 0.9rem; font-weight: bold; border-radius: 4px; cursor: pointer;
             height: 30px; transition: background 0.2s; min-width: 90px;
         }
-        button.action-btn:hover { background-color: #2ecc71; }
-        button.action-btn.stop { background-color: #c0392b; }
-        button.action-btn.stop:hover { background-color: #e74c3c; }
-        button.action-btn.toggle { background-color: #555; min-width: 80px; }
-        button.action-btn.toggle:hover { background-color: #666; }
-        button.action-btn.toggle.active { background-color: #2980b9; }
-        button.action-btn.toggle.active:hover { background-color: #3498db; }
+        button.action-btn:hover { background-color: var(--accent-hover); }
+        button.action-btn.stop { background-color: #c8553d; color: #fff; }
+        button.action-btn.stop:hover { background-color: #d9674f; }
+        button.action-btn.toggle { background-color: transparent; color: #ccc; border: 1px solid #555; min-width: 80px; }
+        button.action-btn.toggle:hover { background-color: rgba(255,255,255,0.06); }
+        button.action-btn.toggle.active { background-color: transparent; color: var(--accent); border-color: var(--accent); }
+        button.action-btn.toggle.active:hover { background-color: rgba(242, 163, 58, 0.1); }
 
         .fretboard-container {
             width: 100%;
@@ -185,7 +188,7 @@
         .note-display.visible { opacity: 1; transform: scale(1); }
         .note-display.playing { 
             transform: scale(1.3); background-color: var(--playing-note-bg) !important;
-            color: var(--playing-note-text) !important; box-shadow: 0 0 10px #f1c40f; 
+            color: var(--playing-note-text) !important; box-shadow: 0 0 14px var(--accent); 
             z-index: 100;
         }
         .note-display.root {
@@ -240,7 +243,7 @@
 
         .range-window .rw-bar {
             position: absolute; left: 0; right: 0; bottom: 0; height: 15px;
-            background: rgba(241, 196, 15, 0.22);
+            background: rgba(242, 163, 58, 0.12);
             border: 1px solid var(--box-border-color);
             border-radius: 4px;
             display: flex; align-items: center; justify-content: center;
@@ -248,8 +251,8 @@
             color: var(--box-border-color);
             cursor: grab; pointer-events: auto; touch-action: none;
         }
-        .range-window .rw-bar:hover { background: rgba(241, 196, 15, 0.4); }
-        .range-window.dragging .rw-bar { cursor: grabbing; background: rgba(241, 196, 15, 0.45); }
+        .range-window .rw-bar:hover { background: rgba(242, 163, 58, 0.3); }
+        .range-window.dragging .rw-bar { cursor: grabbing; background: rgba(242, 163, 58, 0.35); }
 
     </style>
 </head>
