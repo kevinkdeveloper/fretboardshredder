@@ -39,6 +39,8 @@
             padding: 20px 5%;
             user-select: none;
             overflow-x: hidden;
+            touch-action: manipulation;   /* no double-tap zoom when tapping quickly */
+            -webkit-tap-highlight-color: transparent;
         }
 
         h1 { margin: 5px 0 20px; font-size: 1.5rem; }
@@ -213,6 +215,10 @@
         /* --- Draggable focus window --- */
         .fretboard-container { position: relative; }
 
+        /* The fretboard scrolls sideways on narrow screens instead of squashing */
+        .fretboard-scroll { width: 100%; }
+        .swipe-hint { display: none; }
+
         /* ---------- Scale shape selector ---------- */
         .shape-bar {
             width: 100%; display: flex; align-items: center; flex-wrap: wrap;
@@ -287,6 +293,78 @@
         .range-window .rw-bar:hover { background: rgba(242, 163, 58, 0.3); }
         .range-window.dragging .rw-bar { cursor: grabbing; background: rgba(242, 163, 58, 0.35); }
 
+        /* ---------- Phones (portrait) ---------- */
+        @media (max-width: 700px) and (min-height: 501px) {
+            body { padding: 12px 12px 24px; }
+            h1 { font-size: 1.15rem; margin: 2px 0 12px; text-align: center; }
+
+            /* Controls as a tidy two-column grid with thumb-sized targets */
+            .controls {
+                display: grid; grid-template-columns: 1fr 1fr; gap: 10px 12px;
+                align-items: end; padding: 12px;
+            }
+            .control-group { min-width: 0; }
+            .control-group:has(#scaleType), .control-group:has(#tempoInput) { grid-column: 1 / -1; }
+            label { font-size: 0.75rem; }
+            /* 16px text stops iPhones zooming in when a box is tapped */
+            select, input[type="number"] { height: 40px; font-size: 16px; }
+            .tempo-row input[type="range"] { flex: 1; width: auto; height: 8px; }
+            .tempo-row input[type="number"] { width: 72px; }
+            input[type="range"]::-webkit-slider-thumb { width: 26px; height: 26px; }
+            button.action-btn { height: 44px; font-size: 1rem; min-width: 0; width: 100%; }
+
+            /* Shape buttons in one row that scrolls sideways */
+            .shape-bar {
+                flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none;
+                padding-bottom: 2px; scroll-padding: 0 12px;
+            }
+            .shape-bar::-webkit-scrollbar { display: none; }
+            .shape-btn { flex: 0 0 auto; min-height: 44px; }
+            .shape-note { flex: 0 0 auto; }
+
+            /* Fretboard: keep frets wide enough to read and tap, and scroll sideways */
+            .fretboard-scroll {
+                /* run to the screen edges, with room so the drag handles aren't clipped */
+                margin: 0 -12px; padding: 0 14px; width: calc(100% + 24px);
+                overflow-x: auto; -webkit-overflow-scrolling: touch;
+                overscroll-behavior-x: contain; scrollbar-width: thin;
+                scrollbar-color: #555 transparent;
+            }
+            .fretboard-container { min-width: calc(32px + 24 * 40px); }
+            .note-fret.nut, .fret-number-spacer { flex-basis: 32px; }
+            .string { height: 42px; }
+            .note-display { width: 28px; height: 28px; max-width: none; max-height: none; font-size: 0.75rem; }
+            .note-fret.inlay::after { width: 9px; height: 9px; }
+            .fret-number { font-size: 0.75rem; }
+            .range-window .rw-bar { height: 22px; font-size: 0.7rem; }
+            .fret-numbers { padding-bottom: 26px; }
+
+            .swipe-hint {
+                display: block; margin: 4px 0 0; font-size: 0.75rem; color: #888; text-align: center;
+            }
+        }
+
+        /* ---------- Phones (landscape): keep the fretboard on screen ---------- */
+        @media (max-height: 500px) and (orientation: landscape) {
+            body { padding: 6px 16px 16px; }
+            h1 { font-size: 0.95rem; margin: 0 0 6px; }
+            .controls { padding: 6px 10px; gap: 8px; margin-bottom: 6px; flex-wrap: nowrap; }
+            .control-group { min-width: 0; }
+            label { margin-bottom: 2px; font-size: 0.65rem; }
+            select, input[type="number"] { font-size: 16px; height: 34px; padding: 2px 6px; }
+            .tempo-row { gap: 6px; }
+            .tempo-row input[type="range"] { width: clamp(56px, 10vw, 110px); }
+            .tempo-row input[type="number"] { width: 58px; }
+            .control-group:has(#tempoInput) { flex: 0 0 auto; }
+            .control-group:has(#tuningSelect), .control-group:has(#scaleType) { flex: 1 1 0; }
+            button.action-btn { height: 34px; min-width: 0; padding: 0 12px; white-space: nowrap; }
+            .shape-bar { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; margin-bottom: 6px; }
+            .shape-bar::-webkit-scrollbar { display: none; }
+            .shape-btn { flex: 0 0 auto; min-height: 36px; padding: 1px 10px; }
+            .string { height: 30px; }
+            .fret-numbers { padding-bottom: 20px; }
+        }
+
     </style>
 </head>
 <body>
@@ -327,6 +405,7 @@
         <span class="shape-note" id="shapeNote" hidden>Shapes are available in Standard, E♭ Standard and D Standard tuning</span>
     </div>
 
+    <div class="fretboard-scroll" id="fretboardScroll">
     <div class="fretboard-container">
         <div class="fretboard" id="fretboard"></div>
         <div class="fret-numbers" id="fretNumbers"></div>
@@ -337,6 +416,8 @@
             <div class="rw-bar" title="Drag to slide the focus window along the neck"></div>
         </div>
     </div>
+    </div>
+    <p class="swipe-hint">Swipe the fretboard to see all 24 frets</p>
 
     <script>
         const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
@@ -492,6 +573,29 @@
         const tempoSlider = document.getElementById('tempoSlider');
         const tempoInput = document.getElementById('tempoInput');
         const rangeWindowEl = document.getElementById('rangeWindow');
+        const fretboardScroll = document.getElementById('fretboardScroll');
+
+        // On narrow screens the fretboard scrolls sideways; these keep the action in view.
+        function isBoardScrollable() {
+            return fretboardScroll.scrollWidth > fretboardScroll.clientWidth + 1;
+        }
+        // Scroll so the frets from left to right (page x positions) are visible, centring if needed
+        function revealSpan(left, right, smooth = true) {
+            if (!isBoardScrollable()) return;
+            const view = fretboardScroll.getBoundingClientRect();
+            const margin = 24;
+            if (left >= view.left + margin && right <= view.right - margin) return;
+            const centre = (left + right) / 2 - view.left + fretboardScroll.scrollLeft;
+            fretboardScroll.scrollTo({ left: centre - view.width / 2, behavior: smooth ? 'smooth' : 'auto' });
+        }
+        function revealRange(smooth = true) {
+            const r = rangeWindowEl.getBoundingClientRect();
+            revealSpan(r.left, r.right, smooth);
+        }
+        function revealNote(noteEl) {
+            const r = noteEl.getBoundingClientRect();
+            revealSpan(r.left, r.right);
+        }
         const rwBar = rangeWindowEl.querySelector('.rw-bar');
         const rwLeft = rangeWindowEl.querySelector('.rw-left');
         const rwRight = rangeWindowEl.querySelector('.rw-right');
@@ -612,6 +716,14 @@
                 btn.setAttribute('aria-pressed', isActive);
                 shapeBar.insertBefore(btn, shapeNote);
             }
+            // In the sideways-scrolling row on phones, keep the selected button visible
+            const activeBtn = shapeBar.querySelector('.shape-btn.active');
+            if (activeBtn && shapeBar.scrollWidth > shapeBar.clientWidth) {
+                const bar = shapeBar.getBoundingClientRect(), b = activeBtn.getBoundingClientRect();
+                if (b.left < bar.left || b.right > bar.right) {
+                    shapeBar.scrollTo({ left: shapeBar.scrollLeft + (b.left - bar.left) - (bar.width - b.width) / 2, behavior: 'smooth' });
+                }
+            }
         }
 
         // Selects a shape (or null for the full neck) and fits the range window to it.
@@ -627,6 +739,7 @@
             }
             updateShapeButtons();
             updateFretboard();
+            if (k !== null) revealRange();
         }
 
         // Root, scale or tuning changed: keep the same shape number (roughly the same part of the neck).
@@ -757,7 +870,7 @@
 
                     fretDiv.appendChild(noteDisplay);
 
-                    fretDiv.addEventListener('mousedown', () => {
+                    fretDiv.addEventListener('pointerdown', () => {
                         playTone(currentMidi); 
                         noteDisplay.classList.add('playing');
                         setTimeout(() => noteDisplay.classList.remove('playing'), 150);
@@ -875,12 +988,42 @@
             return dragFretRects.length - 1;
         }
 
+        // Fret cell positions; re-measured as the board scrolls during a drag
+        function measureFrets() {
+            const firstString = fretboardEl.firstElementChild;
+            dragFretRects = Array.from(firstString.querySelectorAll('.note-fret'))
+                                 .map(cell => cell.getBoundingClientRect());
+        }
+
+        // While dragging near the edge of a scrolling board, keep scrolling so the
+        // window can be dragged to frets that are off screen.
+        let dragPointerX = 0, autoScrollFrame = null;
+        function autoScrollStep() {
+            autoScrollFrame = null;
+            if (!dragMode || !isBoardScrollable()) return;
+            const view = fretboardScroll.getBoundingClientRect();
+            const zone = 40;
+            let dx = 0;
+            if (dragPointerX < view.left + zone) dx = -Math.ceil((view.left + zone - dragPointerX) / 4);
+            else if (dragPointerX > view.right - zone) dx = Math.ceil((dragPointerX - (view.right - zone)) / 4);
+            if (dx) {
+                const before = fretboardScroll.scrollLeft;
+                fretboardScroll.scrollLeft += dx;
+                if (fretboardScroll.scrollLeft !== before) {
+                    measureFrets();
+                    moveRangeDrag({ clientX: dragPointerX });
+                }
+            }
+            autoScrollFrame = requestAnimationFrame(autoScrollStep);
+        }
+
         function beginRangeDrag(e, mode) {
             const firstString = fretboardEl.firstElementChild;
             if (!firstString || dragMode || e.button !== 0) return;
             e.preventDefault();
-            dragFretRects = Array.from(firstString.querySelectorAll('.note-fret'))
-                                 .map(cell => cell.getBoundingClientRect());
+            measureFrets();
+            dragPointerX = e.clientX;
+            if (!autoScrollFrame) autoScrollFrame = requestAnimationFrame(autoScrollStep);
             dragMode = mode;
             [dragStartMin, dragStartMax] = getRange();
             dragStartFret = fretAtClientX(e.clientX);
@@ -891,6 +1034,7 @@
 
         function moveRangeDrag(e) {
             if (!dragMode) return;
+            dragPointerX = e.clientX;
             const fret = fretAtClientX(e.clientX);
             if (dragMode === 'move') {
                 const span = dragStartMax - dragStartMin;
@@ -907,6 +1051,7 @@
         function endRangeDrag(e) {
             if (!dragMode) return;
             dragMode = null;
+            if (autoScrollFrame) { cancelAnimationFrame(autoScrollFrame); autoScrollFrame = null; }
             rangeWindowEl.classList.remove('dragging');
             if (dragCaptureEl && dragCaptureEl.hasPointerCapture(e.pointerId)) {
                 dragCaptureEl.releasePointerCapture(e.pointerId);
@@ -971,6 +1116,7 @@
                     const delayMs = 60000 / bpm; 
                     playTone(midi); 
                     note.classList.add('playing');
+                    revealNote(note);
                     await new Promise(r => setTimeout(r, delayMs)); 
                     note.classList.remove('playing');
                 }
