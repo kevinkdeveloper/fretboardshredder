@@ -295,7 +295,7 @@
             <input type="range" id="tempoSlider" min="60" max="300" value="120">
         </div>
 
-        <button class="action-btn toggle" id="loopBtn" aria-pressed="false" onclick="toggleLoop()" title="Repeat the run until you press Stop">🔁 Loop</button>
+        <button class="action-btn toggle" id="loopBtn" aria-pressed="false" onclick="toggleLoop()" title="Play up and back down the run until you press Stop">🔁 Loop</button>
         <button class="action-btn" id="playBtn" onclick="togglePlay()">▶ Play</button>
     </div>
 
@@ -750,9 +750,17 @@
             playBtn.textContent = "◼ Stop";
             playBtn.classList.add('stop');
 
+            // When looping, alternate direction each pass (up, down, up, ...) so the
+            // run turns around at each end instead of jumping back to the start.
+            let pass = 0;
             do {
-                const validNotes = collectScaleNotes();
+                let validNotes = collectScaleNotes();
                 if (validNotes.length === 0) break;   // nothing in the window: never spin
+
+                if (pass % 2 === 1) validNotes.reverse();
+                // Don't repeat the turnaround note that ended the previous pass
+                if (pass > 0 && validNotes.length > 1) validNotes = validNotes.slice(1);
+                pass++;
 
                 for (let note of validNotes) {
                     if (shouldStop) break;
