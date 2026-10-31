@@ -782,8 +782,11 @@
                 if (validNotes.length === 0) break;   // nothing in the window: never spin
 
                 if (pass % 2 === 1) validNotes.reverse();
-                // Don't repeat the turnaround note that ended the previous pass
-                if (pass > 0 && validNotes.length > 1) validNotes = validNotes.slice(1);
+                // Is this pass heading down the scale? (odd passes run opposite to the chosen direction)
+                const goingDown = (directionSelect.value === 'desc') === (pass % 2 === 0);
+                // At the top, play the top note once more before descending;
+                // at the bottom, turn straight round without repeating the bottom note.
+                if (pass > 0 && !goingDown && validNotes.length > 1) validNotes = validNotes.slice(1);
                 pass++;
 
                 for (let note of validNotes) {
