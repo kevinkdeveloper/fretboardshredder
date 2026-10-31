@@ -232,6 +232,10 @@
         .shape-btn.active small { color: var(--accent); }
         .shape-btn:disabled { opacity: 0.35; cursor: not-allowed; }
         .shape-note { font-size: 0.75rem; color: #888; margin-left: 6px; }
+        @media (max-width: 600px) {
+            .shape-btn { min-width: 38px; padding: 2px 6px; font-size: 0.85rem; }
+            .shape-btn small { font-size: 0.55rem; }
+        }
 
         /* Notes outside the selected shape stay visible but fade back */
         .note-display.visible.dim { opacity: 0.08; box-shadow: none; }
@@ -324,11 +328,7 @@
     <div class="shape-bar" id="shapeBar" role="group" aria-label="Scale shape">
         <span class="shape-bar-label">Shape</span>
         <button class="shape-btn active" data-shape="all" aria-pressed="true">Full neck</button>
-        <button class="shape-btn" data-shape="0" aria-pressed="false">1<small></small></button>
-        <button class="shape-btn" data-shape="1" aria-pressed="false">2<small></small></button>
-        <button class="shape-btn" data-shape="2" aria-pressed="false">3<small></small></button>
-        <button class="shape-btn" data-shape="3" aria-pressed="false">4<small></small></button>
-        <button class="shape-btn" data-shape="4" aria-pressed="false">5<small></small></button>
+        <!-- Numbered shape buttons are added by the script: one per position up to fret 24 -->
         <span class="shape-note" id="shapeNote" hidden>Shapes are available in Standard, E♭ Standard and D Standard tuning</span>
     </div>
 
@@ -506,9 +506,10 @@
         let shouldStop = false;
 
         /* ---------- Scale shapes ---------- */
-        const shapeBtns = Array.from(document.querySelectorAll('.shape-btn'));
+        const shapeBar = document.getElementById('shapeBar');
+        const fullNeckBtn = shapeBar.querySelector('.shape-btn[data-shape="all"]');
         const shapeNote = document.getElementById('shapeNote');
-        let activeShape = null;      // null = full neck, otherwise 0-4
+        let activeShape = null;      // null = full neck, otherwise an index into allShapes()
         let activeShapeKeys = null;  // Set of "string-fret" for the notes in the active shape
 
         // Shapes follow standard-tuning fingerings, so they're offered only when the strings
@@ -567,40 +568,67 @@
             return { notes, lo: Math.min(...used), hi: Math.max(...used) };
         }
 
-        function shapeFor(k) {
+        // Every position of the five shapes that fits between the nut and fret 24, in order
+        // up the neck. The pattern repeats every five: shape 6 is shape 1 an octave higher.
+        function allShapes() {
+            if (!shapesSupported()) return [];
             const open = tunings[tuningSelect.value].slice().reverse();
-            return computeShape(open, parseInt(rootSelect.value), scales[scaleSelect.value], k);
+            const root = parseInt(rootSelect.value);
+            const intervals = scales[scaleSelect.value];
+            const found = [];
+            for (let k = 0; k < 5; k++) {
+                const base = computeShape(open, root, intervals, k);
+                for (let shift = -24; shift <= 24; shift += 12) {
+                    if (base.lo + shift < 0 || base.hi + shift > numberOfFrets) continue;
+                    found.push({
+                        notes: base.notes.map(([st, f]) => [st, f + shift]),
+                        lo: base.lo + shift, hi: base.hi + shift
+                    });
+                }
+            }
+            return found.sort((a, b) => a.lo - b.lo || a.hi - b.hi);
         }
 
         function updateShapeButtons() {
             const supported = shapesSupported();
+            const shapes = allShapes();
             shapeNote.hidden = supported;
-            shapeBtns.forEach(btn => {
-                const k = btn.dataset.shape === 'all' ? null : parseInt(btn.dataset.shape);
-                const isActive = k === activeShape;
-                btn.classList.toggle('active', isActive);
-                btn.setAttribute('aria-pressed', isActive);
-                if (k === null) return;
-                btn.disabled = !supported;
-                const hint = btn.querySelector('small');
+            fullNeckBtn.classList.toggle('active', activeShape === null);
+            fullNeckBtn.setAttribute('aria-pressed', activeShape === null);
+
+            // Rebuild the numbered buttons (the count depends on the key and scale)
+            shapeBar.querySelectorAll('.shape-btn[data-shape]:not([data-shape="all"])').forEach(b => b.remove());
+            const shapeBtnsToShow = supported ? shapes.length : 5;   // greyed-out placeholders otherwise
+            for (let i = 0; i < shapeBtnsToShow; i++) {
+                const btn = document.createElement('button');
+                btn.className = 'shape-btn';
+                btn.dataset.shape = i;
+                btn.textContent = i + 1;
+                const hint = document.createElement('small');
+                btn.appendChild(hint);
                 if (supported) {
-                    const sh = shapeFor(k);
+                    const sh = shapes[i];
                     hint.textContent = 'frets ' + sh.lo + '\u2013' + sh.hi;
-                    btn.title = 'Shape ' + (k + 1) + ', frets ' + sh.lo + ' to ' + sh.hi;
+                    btn.title = 'Shape ' + (i + 1) + ', frets ' + sh.lo + ' to ' + sh.hi;
                 } else {
-                    hint.textContent = '';
+                    btn.disabled = true;
                     btn.title = 'Shapes need Standard, E\u266d Standard or D Standard tuning';
                 }
-            });
+                const isActive = i === activeShape;
+                btn.classList.toggle('active', isActive);
+                btn.setAttribute('aria-pressed', isActive);
+                shapeBar.insertBefore(btn, shapeNote);
+            }
         }
 
         // Selects a shape (or null for the full neck) and fits the range window to it.
         function selectShape(k) {
-            if (k !== null && !shapesSupported()) k = null;
+            const shapes = allShapes();
+            if (k !== null && k >= shapes.length) k = shapes.length ? shapes.length - 1 : null;
             activeShape = k;
             activeShapeKeys = null;
             if (k !== null) {
-                const sh = shapeFor(k);
+                const sh = shapes[k];
                 activeShapeKeys = new Set(sh.notes.map(([s, f]) => (5 - s) + '-' + f));
                 setRange(sh.lo, sh.hi, true);
             }
@@ -608,7 +636,7 @@
             updateFretboard();
         }
 
-        // Root, scale or tuning changed: keep the same shape number, moved to its new position.
+        // Root, scale or tuning changed: keep the same shape number (roughly the same part of the neck).
         function refreshShape() {
             selectShape(activeShape);
         }
@@ -647,15 +675,18 @@
                 refreshShape();
             });
 
-            shapeBtns.forEach(btn => btn.addEventListener('click', () => {
+            shapeBar.addEventListener('click', e => {
+                const btn = e.target.closest('.shape-btn');
+                if (!btn || btn.disabled) return;
                 selectShape(btn.dataset.shape === 'all' ? null : parseInt(btn.dataset.shape));
-            }));
-            // Left/right arrow keys step through Full neck, 1-5 (not while typing in a control)
+            });
+            // Left/right arrow keys step through Full neck and each shape (not while typing in a control)
             document.addEventListener('keydown', e => {
                 if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return;
                 if (e.target.closest('input, select, textarea')) return;
-                if (!shapesSupported()) return;
-                const order = [null, 0, 1, 2, 3, 4];
+                const count = allShapes().length;
+                if (!count) return;
+                const order = [null, ...Array.from({ length: count }, (_, i) => i)];
                 const i = order.indexOf(activeShape);
                 const next = order[(i + (e.key === 'ArrowRight' ? 1 : order.length - 1)) % order.length];
                 e.preventDefault();
