@@ -212,6 +212,30 @@
 
         /* --- Draggable focus window --- */
         .fretboard-container { position: relative; }
+
+        /* ---------- Scale shape selector ---------- */
+        .shape-bar {
+            width: 100%; display: flex; align-items: center; flex-wrap: wrap;
+            gap: 6px; margin-bottom: 10px;
+        }
+        .shape-bar-label { font-size: 0.7rem; color: #aaa; font-weight: bold; margin-right: 4px; }
+        .shape-btn {
+            background: transparent; color: #ccc; border: 1px solid #555; border-radius: 4px;
+            min-height: 36px; min-width: 44px; padding: 2px 12px; font-family: inherit;
+            font-size: 0.9rem; font-weight: bold; cursor: pointer;
+            display: flex; flex-direction: column; align-items: center; justify-content: center;
+            line-height: 1.1;
+        }
+        .shape-btn small { font-size: 0.6rem; font-weight: normal; color: #888; }
+        .shape-btn:hover:not(:disabled) { background: rgba(255, 255, 255, 0.06); }
+        .shape-btn.active { border-color: var(--accent); color: var(--accent); background: rgba(242, 163, 58, 0.1); }
+        .shape-btn.active small { color: var(--accent); }
+        .shape-btn:disabled { opacity: 0.35; cursor: not-allowed; }
+        .shape-note { font-size: 0.75rem; color: #888; margin-left: 6px; }
+
+        /* Notes outside the selected shape stay visible but fade back */
+        .note-display.visible.dim { opacity: 0.18; }
+        .note-display.visible.dim.playing { opacity: 1; }
         .fret-numbers { padding-bottom: 18px; }
 
         .range-window {
@@ -295,6 +319,17 @@
 
         <button class="action-btn toggle" id="loopBtn" aria-pressed="false" onclick="toggleLoop()" title="Play up and back down the run until you press Stop">🔁 Loop</button>
         <button class="action-btn" id="playBtn" onclick="togglePlay()">▶ Play</button>
+    </div>
+
+    <div class="shape-bar" id="shapeBar" role="group" aria-label="Scale shape">
+        <span class="shape-bar-label">Shape</span>
+        <button class="shape-btn active" data-shape="all" aria-pressed="true">Full neck</button>
+        <button class="shape-btn" data-shape="0" aria-pressed="false">1<small></small></button>
+        <button class="shape-btn" data-shape="1" aria-pressed="false">2<small></small></button>
+        <button class="shape-btn" data-shape="2" aria-pressed="false">3<small></small></button>
+        <button class="shape-btn" data-shape="3" aria-pressed="false">4<small></small></button>
+        <button class="shape-btn" data-shape="4" aria-pressed="false">5<small></small></button>
+        <span class="shape-note" id="shapeNote" hidden>Shapes are available in Standard, E♭ Standard and D Standard tuning</span>
     </div>
 
     <div class="fretboard-container">
@@ -468,6 +503,114 @@
         let isPlaying = false;
         let shouldStop = false;
 
+        /* ---------- Scale shapes ---------- */
+        const shapeBtns = Array.from(document.querySelectorAll('.shape-btn'));
+        const shapeNote = document.getElementById('shapeNote');
+        let activeShape = null;      // null = full neck, otherwise 0-4
+        let activeShapeKeys = null;  // Set of "string-fret" for the notes in the active shape
+
+        // Shapes follow standard-tuning fingerings, so they're offered only when the strings
+        // are a fourth apart with a major third between G and B (Standard, Eb and D Standard).
+        function shapesSupported() {
+            const low = tunings[tuningSelect.value].slice().reverse();
+            return low.slice(1).map((m, i) => m - low[i]).join(',') === '5,5,5,4,5';
+        }
+
+        // Works out one of the five shapes for any root and scale.
+        // open: open-string pitches, lowest string first. Returns notes as [string, fret]
+        // pairs (string 0 = lowest) plus the lowest and highest fret used.
+        function computeShape(open, root, intervals, k) {
+            const pentOffsets = intervals.includes(4) ? [0, 2, 4, 7, 9] : [0, 3, 5, 7, 10];
+            const pentPcs = pentOffsets.map(o => (root + o) % 12);
+            const scalePcs = intervals.map(i => (root + i) % 12);
+            const pc = p => ((p % 12) + 12) % 12;
+            const rootFret = pc(root - open[0]);
+
+            // 1. Window: the pentatonic box starting on pentatonic degree k on the lowest string,
+            //    two notes per string.
+            let start = open[0] + rootFret + pentOffsets[k];
+            let lo, hi;
+            for (let attempt = 0; attempt < 3; attempt++) {
+                const seq = [];
+                for (let p = start; seq.length < open.length * 2; p++) if (pentPcs.includes(pc(p))) seq.push(p);
+                const frets = seq.map((p, i) => p - open[Math.floor(i / 2)]);
+                lo = Math.min(...frets); hi = Math.max(...frets);
+                if (lo < 0) start += 12;
+                else if (hi > 24) start -= 12;
+                else break;
+            }
+
+            // 2. Fill the window with the chosen scale's notes, lowest string first, moving to the
+            //    next string once a note no longer fits. One fret of stretch either side if needed.
+            const notes = [];
+            let s = 0;
+            let p = open[0] + lo;
+            while (!scalePcs.includes(pc(p)) || p - open[0] < lo) p++;
+            for (; s < open.length; p++) {
+                if (!scalePcs.includes(pc(p))) continue;
+                const f = p - open[s];
+                const hasNext = s + 1 < open.length;
+                const fn = hasNext ? p - open[s + 1] : null;
+                const full = notes.filter(n => n[0] === s).length >= 3;   // max 3 notes per string
+                if (full && !hasNext) break;
+                if (full && fn >= Math.max(0, lo - 1)) notes.push([++s, fn]);
+                else if (f >= lo && f <= hi && !full) notes.push([s, f]);
+                else if (hasNext && fn >= lo && fn <= hi) notes.push([++s, fn]);
+                else if (f === hi + 1 && f <= 24 && !full) notes.push([s, f]);
+                else if (hasNext && fn === lo - 1 && fn >= 0) notes.push([++s, fn]);
+                else if (!hasNext && f > hi + 1) break;
+                else if (hasNext && f > hi + 1) s++;   // nothing reachable: move on (rare)
+            }
+            const used = notes.map(n => n[1]);
+            return { notes, lo: Math.min(...used), hi: Math.max(...used) };
+        }
+
+        function shapeFor(k) {
+            const open = tunings[tuningSelect.value].slice().reverse();
+            return computeShape(open, parseInt(rootSelect.value), scales[scaleSelect.value], k);
+        }
+
+        function updateShapeButtons() {
+            const supported = shapesSupported();
+            shapeNote.hidden = supported;
+            shapeBtns.forEach(btn => {
+                const k = btn.dataset.shape === 'all' ? null : parseInt(btn.dataset.shape);
+                const isActive = k === activeShape;
+                btn.classList.toggle('active', isActive);
+                btn.setAttribute('aria-pressed', isActive);
+                if (k === null) return;
+                btn.disabled = !supported;
+                const hint = btn.querySelector('small');
+                if (supported) {
+                    const sh = shapeFor(k);
+                    hint.textContent = 'frets ' + sh.lo + '\u2013' + sh.hi;
+                    btn.title = 'Shape ' + (k + 1) + ', frets ' + sh.lo + ' to ' + sh.hi;
+                } else {
+                    hint.textContent = '';
+                    btn.title = 'Shapes need Standard, E\u266d Standard or D Standard tuning';
+                }
+            });
+        }
+
+        // Selects a shape (or null for the full neck) and fits the range window to it.
+        function selectShape(k) {
+            if (k !== null && !shapesSupported()) k = null;
+            activeShape = k;
+            activeShapeKeys = null;
+            if (k !== null) {
+                const sh = shapeFor(k);
+                activeShapeKeys = new Set(sh.notes.map(([s, f]) => (5 - s) + '-' + f));
+                setRange(sh.lo, sh.hi, true);
+            }
+            updateShapeButtons();
+            updateFretboard();
+        }
+
+        // Root, scale or tuning changed: keep the same shape number, moved to its new position.
+        function refreshShape() {
+            selectShape(activeShape);
+        }
+
         function init() {
             noteNames.forEach((note, index) => {
                 const option = document.createElement('option');
@@ -495,12 +638,28 @@
             drawFretboard();
             updateFretboard();
 
-            rootSelect.addEventListener('change', updateFretboard);
-            scaleSelect.addEventListener('change', updateFretboard);
+            rootSelect.addEventListener('change', refreshShape);
+            scaleSelect.addEventListener('change', refreshShape);
             tuningSelect.addEventListener('change', () => {
                 drawFretboard();
-                updateFretboard();
+                refreshShape();
             });
+
+            shapeBtns.forEach(btn => btn.addEventListener('click', () => {
+                selectShape(btn.dataset.shape === 'all' ? null : parseInt(btn.dataset.shape));
+            }));
+            // Left/right arrow keys step through Full neck, 1-5 (not while typing in a control)
+            document.addEventListener('keydown', e => {
+                if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return;
+                if (e.target.closest('input, select, textarea')) return;
+                if (!shapesSupported()) return;
+                const order = [null, 0, 1, 2, 3, 4];
+                const i = order.indexOf(activeShape);
+                const next = order[(i + (e.key === 'ArrowRight' ? 1 : order.length - 1)) % order.length];
+                e.preventDefault();
+                selectShape(next);
+            });
+            updateShapeButtons();
             startFretInput.addEventListener('change', () => setRange(readFret(startFretInput), readFret(endFretInput)));
             endFretInput.addEventListener('change', () => setRange(readFret(startFretInput), readFret(endFretInput)));
 
@@ -623,9 +782,12 @@
 
             allNotes.forEach(noteEl => {
                 const noteIndex = parseInt(noteEl.dataset.noteIndex);
-                noteEl.classList.remove('visible', 'root', 'scale-note');
+                noteEl.classList.remove('visible', 'root', 'scale-note', 'dim');
                 if (allowedIndices.includes(noteIndex)) {
                     noteEl.classList.add('visible');
+                    if (activeShapeKeys && !activeShapeKeys.has(noteEl.dataset.string + '-' + noteEl.dataset.fret)) {
+                        noteEl.classList.add('dim');
+                    }
                     if (noteIndex === rootIndex) noteEl.classList.add('root');
                     else noteEl.classList.add('scale-note');
                 }
@@ -650,7 +812,7 @@
             return [readFret(startFretInput), readFret(endFretInput)];
         }
 
-        function setRange(min, max) {
+        function setRange(min, max, fromShape = false) {
             min = Math.max(0, Math.min(numberOfFrets, min));
             max = Math.max(min, Math.min(numberOfFrets, max));
             startFretInput.value = min;
@@ -658,6 +820,12 @@
             if (min === appliedMin && max === appliedMax) return;   // skip redundant repaints mid-drag
             appliedMin = min;
             appliedMax = max;
+            // Dragging the window or typing a range means a custom range, so leave the shape
+            if (!fromShape && activeShape !== null) {
+                activeShape = null;
+                activeShapeKeys = null;
+                updateShapeButtons();
+            }
             updateFretboard();
         }
 
@@ -741,7 +909,7 @@
         // (root, scale, tuning, direction, the focus window) take effect next time round.
         function collectScaleNotes() {
             const [minFret, maxFret] = getRange();
-            const validNotes = Array.from(document.querySelectorAll('.note-display.visible'))
+            const validNotes = Array.from(document.querySelectorAll('.note-display.visible:not(.dim)'))
                 .filter(n => {
                     const f = parseInt(n.dataset.fret);
                     return f >= minFret && f <= maxFret;
