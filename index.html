@@ -283,14 +283,6 @@
         </div>
 
         <div class="control-group">
-            <label>Tone</label>
-            <select id="toneSelect">
-                <option value="clean">Clean</option>
-                <option value="dist">High Gain</option>
-            </select>
-        </div>
-
-        <div class="control-group">
             <label>Direction</label>
             <select id="directionSelect">
                 <option value="asc">Ascending (↑)</option>
@@ -323,22 +315,8 @@
 
         let currentSource = null;
         let currentGainNode = null;
-        let distortionCurve = null;
         let reverbNode = null;
         let reverbWetGain = null;
-
-        // Tanh-based soft clipping — much more musical/tube-like than the old formula
-        function makeDistortionCurve(amount) {
-            const n = 512;
-            const curve = new Float32Array(n);
-            const k = amount / 100;
-            const norm = Math.tanh(k);
-            for (let i = 0; i < n; i++) {
-                const x = (i * 2) / n - 1;
-                curve[i] = Math.tanh(k * x) / norm;
-            }
-            return curve;
-        }
 
         // Convolution reverb using programmatically generated impulse response
         function initReverb() {
@@ -409,81 +387,31 @@
             const source = audioCtx.createBufferSource();
             source.buffer = buffer;
 
-            const tone = document.getElementById('toneSelect').value;
             const masterGain = audioCtx.createGain();
 
-            if (tone === 'dist') {
-                // High-gain chain: tight HPF → mid scoop/boost → pre-gain → tanh shaper → cab sim
-                const preHPF = audioCtx.createBiquadFilter();
-                preHPF.type = 'highpass';
-                preHPF.frequency.value = 160;
-                preHPF.Q.value = 0.6;
+            // Clean tone: body warmth + presence boost + gentle air cut
+            const bodyWarmth = audioCtx.createBiquadFilter();
+            bodyWarmth.type = 'peaking';
+            bodyWarmth.frequency.value = 260;
+            bodyWarmth.gain.value = 4;
+            bodyWarmth.Q.value = 1.5;
 
-                const midBoost = audioCtx.createBiquadFilter();
-                midBoost.type = 'peaking';
-                midBoost.frequency.value = 900;
-                midBoost.gain.value = 10;
-                midBoost.Q.value = 1.2;
+            const presence = audioCtx.createBiquadFilter();
+            presence.type = 'peaking';
+            presence.frequency.value = 3200;
+            presence.gain.value = 3;
+            presence.Q.value = 2.0;
 
-                const driveGain = audioCtx.createGain();
-                driveGain.gain.value = 280;
+            const airCut = audioCtx.createBiquadFilter();
+            airCut.type = 'highshelf';
+            airCut.frequency.value = 7500;
+            airCut.gain.value = -4;
 
-                const shaper = audioCtx.createWaveShaper();
-                if (!distortionCurve) distortionCurve = makeDistortionCurve(500);
-                shaper.curve = distortionCurve;
-                shaper.oversample = '4x';
-
-                // Multi-stage cabinet sim
-                const cabLP = audioCtx.createBiquadFilter();
-                cabLP.type = 'lowpass';
-                cabLP.frequency.value = 5500;
-                cabLP.Q.value = 0.8;
-
-                const cabHP = audioCtx.createBiquadFilter();
-                cabHP.type = 'highpass';
-                cabHP.frequency.value = 100;
-                cabHP.Q.value = 0.7;
-
-                const presence = audioCtx.createBiquadFilter();
-                presence.type = 'peaking';
-                presence.frequency.value = 3500;
-                presence.gain.value = 5;
-                presence.Q.value = 2.0;
-
-                source.connect(preHPF);
-                preHPF.connect(midBoost);
-                midBoost.connect(driveGain);
-                driveGain.connect(shaper);
-                shaper.connect(cabLP);
-                cabLP.connect(cabHP);
-                cabHP.connect(presence);
-                presence.connect(masterGain);
-                masterGain.gain.value = 0.28;
-            } else {
-                // Clean tone: body warmth + presence boost + gentle air cut
-                const bodyWarmth = audioCtx.createBiquadFilter();
-                bodyWarmth.type = 'peaking';
-                bodyWarmth.frequency.value = 260;
-                bodyWarmth.gain.value = 4;
-                bodyWarmth.Q.value = 1.5;
-
-                const presence = audioCtx.createBiquadFilter();
-                presence.type = 'peaking';
-                presence.frequency.value = 3200;
-                presence.gain.value = 3;
-                presence.Q.value = 2.0;
-
-                const airCut = audioCtx.createBiquadFilter();
-                airCut.type = 'highshelf';
-                airCut.frequency.value = 7500;
-                airCut.gain.value = -4;
-
-                source.connect(bodyWarmth);
-                bodyWarmth.connect(presence);
-                presence.connect(airCut);
-                airCut.connect(masterGain);
-                masterGain.gain.value = 0.88;
-            }
+            source.connect(bodyWarmth);
+            bodyWarmth.connect(presence);
+            presence.connect(airCut);
+            airCut.connect(masterGain);
+            masterGain.gain.value = 0.88;
 
             // Dry signal to output
             masterGain.connect(audioCtx.destination);
