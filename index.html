@@ -261,6 +261,18 @@
         .range-window.dragging .rw-edge::after {
             opacity: 1; box-shadow: 0 0 8px var(--box-border-color);
         }
+        /* Grip handle in the middle of each edge, so it's clear the window can be resized */
+        .range-window .rw-edge::before {
+            content: ''; position: absolute; left: 50%; top: 50%; z-index: 1;
+            width: 10px; height: 30px; transform: translate(-50%, -50%);
+            border-radius: 5px; background: var(--accent);
+            box-shadow: 0 1px 4px rgba(0, 0, 0, 0.6);
+            background-image: repeating-linear-gradient(to bottom, transparent 0 9px, rgba(30, 22, 8, 0.55) 9px 11px);
+            background-size: 4px 100%; background-repeat: no-repeat; background-position: center;
+        }
+        .range-window .rw-edge:hover::before,
+        .range-window.dragging .rw-edge::before { box-shadow: 0 0 8px var(--accent); }
+        @media (pointer: coarse) { .range-window .rw-edge { width: 26px; } .range-window .rw-edge::after { left: 12px; } }
 
         .range-window .rw-bar {
             position: absolute; left: 0; right: 0; bottom: 0; height: 15px;
@@ -296,15 +308,6 @@
             <select id="scaleType"></select>
         </div>
         
-        <div class="control-group">
-            <label>Start</label>
-            <input type="number" id="startFret" value="0" min="0" max="24">
-        </div>
-        <div class="control-group">
-            <label>End</label>
-            <input type="number" id="endFret" value="12" min="0" max="24">
-        </div>
-
         <div class="control-group">
             <label for="tempoInput">Tempo (BPM)</label>
             <div class="tempo-row">
@@ -482,8 +485,8 @@
         const rootSelect = document.getElementById('rootNote');
         const scaleSelect = document.getElementById('scaleType');
         const tuningSelect = document.getElementById('tuningSelect');
-        const startFretInput = document.getElementById('startFret');
-        const endFretInput = document.getElementById('endFret');
+        // The practice range, set by dragging the window on the fretboard
+        let rangeMin = 0, rangeMax = 12;
         const playBtn = document.getElementById('playBtn');
         const loopBtn = document.getElementById('loopBtn');
         const tempoSlider = document.getElementById('tempoSlider');
@@ -686,8 +689,6 @@
                 selectShape(next);
             });
             updateShapeButtons();
-            startFretInput.addEventListener('change', () => setRange(readFret(startFretInput), readFret(endFretInput)));
-            endFretInput.addEventListener('change', () => setRange(readFret(startFretInput), readFret(endFretInput)));
 
             rwBar.addEventListener('pointerdown', e => beginRangeDrag(e, 'move'));
             rwLeft.addEventListener('pointerdown', e => beginRangeDrag(e, 'left'));
@@ -789,8 +790,7 @@
             const intervals = scales[scaleName];
             const allowedIndices = intervals.map(interval => (rootIndex + interval) % 12);
             
-            const minFret = parseInt(startFretInput.value);
-            const maxFret = parseInt(endFretInput.value);
+            const [minFret, maxFret] = getRange();
             const allFrets = document.querySelectorAll('.note-fret');
             const allNotes = document.querySelectorAll('.note-display');
 
@@ -830,24 +830,19 @@
         let dragStartFret = 0, dragStartMin = 0, dragStartMax = 0;
         let appliedMin = null, appliedMax = null;   // range currently painted on the board
 
-        function readFret(input) {
-            const v = parseInt(input.value);
-            return isNaN(v) ? 0 : v;
-        }
-
         function getRange() {
-            return [readFret(startFretInput), readFret(endFretInput)];
+            return [rangeMin, rangeMax];
         }
 
         function setRange(min, max, fromShape = false) {
             min = Math.max(0, Math.min(numberOfFrets, min));
             max = Math.max(min, Math.min(numberOfFrets, max));
-            startFretInput.value = min;
-            endFretInput.value = max;
+            rangeMin = min;
+            rangeMax = max;
             if (min === appliedMin && max === appliedMax) return;   // skip redundant repaints mid-drag
             appliedMin = min;
             appliedMax = max;
-            // Dragging the window or typing a range means a custom range, so leave the shape
+            // Dragging the window means a custom range, so leave the shape
             if (!fromShape && activeShape !== null) {
                 activeShape = null;
                 activeShapeKeys = null;
