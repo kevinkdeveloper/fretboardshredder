@@ -562,7 +562,7 @@
             return { notes, lo: Math.min(...used), hi: Math.max(...used) };
         }
 
-        // Every position of the five shapes between the nut and fret 24, in order
+        // Every complete position of the five shapes between the nut and fret 24, in order
         // up the neck. The pattern repeats every five: shape 6 is shape 1 an octave higher.
         function allShapes() {
             if (!shapesSupported()) return [];
@@ -574,12 +574,9 @@
                 const base = computeShape(open, root, intervals, k);
                 for (let shift = -24; shift <= 24; shift += 12) {
                     const lo = base.lo + shift, hi = base.hi + shift;
-                    if (lo < 0) continue;
-                    // A position that runs past fret 24 is kept if it starts by fret 22,
-                    // with only the notes that fit on the neck, so the shapes reach the top.
-                    if (hi > numberOfFrets && lo > numberOfFrets - 2) continue;
-                    const notes = base.notes.map(([st, f]) => [st, f + shift]).filter(([, f]) => f <= numberOfFrets);
-                    found.push({ notes, lo, hi: Math.max(...notes.map(([, f]) => f)) });
+                    // Only complete shapes: skip any position that would run off either end of the neck
+                    if (lo < 0 || hi > numberOfFrets) continue;
+                    found.push({ notes: base.notes.map(([st, f]) => [st, f + shift]), lo, hi });
                 }
             }
             return found.sort((a, b) => a.lo - b.lo || a.hi - b.hi);
