@@ -252,7 +252,7 @@
             width: 100%; display: flex; align-items: center; flex-wrap: wrap;
             gap: 6px; margin-bottom: 10px;
         }
-        .shape-bar-label { font-size: 0.7rem; color: #aaa; font-weight: bold; margin-right: 4px; }
+        .shape-bar-label { font-size: 0.7rem; color: #aaa; font-weight: bold; margin-right: 4px; white-space: nowrap; flex: 0 0 auto; cursor: help; }
         .shape-btn {
             background: transparent; color: #ccc; border: 1px solid #555; border-radius: 4px;
             min-height: 36px; min-width: 44px; padding: 2px 12px; font-family: inherit;
@@ -449,7 +449,7 @@
     </div>
 
     <div class="shape-bar" id="shapeBar" role="group" aria-label="Scale shape">
-        <span class="shape-bar-label">Shape</span>
+        <span class="shape-bar-label" title="The CAGED system names each position after the open chord shape it's built around: C, A, G, E or D">CAGED shape</span>
         <button class="shape-btn active" data-shape="all" aria-pressed="true">Full neck</button>
         <!-- Numbered shape buttons are added by the script: one per position up to fret 24 -->
         <span class="shape-note" id="shapeNote" hidden>Shapes are available in Standard, E♭ Standard and D Standard tuning</span>
@@ -792,13 +792,30 @@
         }
 
         // Chord shapes in the same form as scale shapes, plus which strings are muted
+        // Which CAGED form a chord shape is, from where its bass root sits (frets: lowest string
+        // first, -1 = muted). Root at the lowest fret on the 6th, 5th or 4th string = E, A or D form;
+        // root reached by the little finger on the 6th or 5th string = G or C form. Otherwise null.
+        function cagedForm(frets) {
+            const played = frets.map((f, st) => f >= 0 ? st : -1).filter(st => st >= 0);
+            const bass = played[0], bassFret = frets[bass];
+            const lowest = Math.min(...played.map(st => frets[st]));
+            if (bassFret === lowest) return { 0: 'E', 1: 'A', 2: 'D' }[bass] || null;
+            if (bassFret >= lowest + 2) return { 0: 'G', 1: 'C' }[bass] || null;
+            return null;
+        }
+
         function chordShapes() {
             const open = tunings[tuningSelect.value].slice().reverse();
+            // CAGED names assume standard-style tuning, and aren't used for power chords
+            const useLetters = shapesSupported() && !CHORD_TYPES[chordSelect.value].power;
             return chordVoicings(open, parseInt(rootSelect.value), chordSelect.value, numberOfFrets).map(v => {
                 const notes = [], muted = [];
                 v.frets.forEach((f, st) => { if (f >= 0) notes.push([st, f]); else muted.push(st); });
                 const frets = notes.map(([, f]) => f);
-                return { notes, muted, frets: v.frets, lo: Math.min(...frets), hi: Math.max(...frets) };
+                return {
+                    notes, muted, frets: v.frets, lo: Math.min(...frets), hi: Math.max(...frets),
+                    letter: useLetters ? cagedForm(v.frets) : null
+                };
             });
         }
 
@@ -829,7 +846,7 @@
             let text = '<strong>' + chordName + '</strong>: ' + names.join(' \u00b7 ');
             if (activeShape !== null) {
                 const sh = allShapes()[activeShape];
-                if (sh) text += ' &nbsp; Shape <span class="tab-shape">' + sh.frets.map(f => f < 0 ? 'x' : f).join(' ') + '</span> <span class="shape-order">(lowest string \u2192 highest)</span>';
+                if (sh) text += ' &nbsp; ' + (sh.letter ? sh.letter + ' shape' : 'Shape') + ' <span class="tab-shape">' + sh.frets.map(f => f < 0 ? 'x' : f).join(' ') + '</span> <span class="shape-order">(lowest string \u2192 highest)</span>';
             }
             chordInfo.innerHTML = text;
         }
@@ -838,6 +855,7 @@
         const shapeBar = document.getElementById('shapeBar');
         const fullNeckBtn = shapeBar.querySelector('.shape-btn[data-shape="all"]');
         const shapeNote = document.getElementById('shapeNote');
+        const shapeBarLabel = shapeBar.querySelector('.shape-bar-label');
         let activeShape = null;      // null = full neck, otherwise an index into allShapes()
         let activeShapeKeys = null;  // Set of "string-fret" for the notes in the active shape
 
@@ -897,6 +915,11 @@
             return { notes, lo: Math.min(...used), hi: Math.max(...used) };
         }
 
+        // CAGED letter for each of the five positions computeShape builds. Position 0 has the root
+        // under the first finger on the lowest string (the E shape); each next position up the neck
+        // follows the CAGED cycle: E, D, C, A, G, then E again an octave higher.
+        const CAGED_BY_POSITION = ['E', 'D', 'C', 'A', 'G'];
+
         // Every complete position of the five shapes between the nut and fret 24, in order
         // up the neck. The pattern repeats every five: shape 6 is shape 1 an octave higher.
         function allShapes() {
@@ -912,13 +935,19 @@
                     const lo = base.lo + shift, hi = base.hi + shift;
                     // Only complete shapes: skip any position that would run off either end of the neck
                     if (lo < 0 || hi > numberOfFrets) continue;
-                    found.push({ notes: base.notes.map(([st, f]) => [st, f + shift]), lo, hi });
+                    found.push({ notes: base.notes.map(([st, f]) => [st, f + shift]), lo, hi, letter: CAGED_BY_POSITION[k] });
                 }
             }
             return found.sort((a, b) => a.lo - b.lo || a.hi - b.hi);
         }
 
+        // Button label: the CAGED letter when the shape has one, otherwise its position number
+        function shapeLabel(sh, i) {
+            return sh.letter || String(i + 1);
+        }
+
         function updateShapeButtons() {
+            shapeBarLabel.textContent = mode === 'chords' ? 'Shape' : 'CAGED shape';
             const supported = mode === 'chords' || shapesSupported();
             const shapes = allShapes();
             shapeNote.hidden = supported;
@@ -932,13 +961,15 @@
                 const btn = document.createElement('button');
                 btn.className = 'shape-btn';
                 btn.dataset.shape = i;
-                btn.textContent = i + 1;
+                const sh = supported ? shapes[i] : null;
+                btn.textContent = sh ? shapeLabel(sh, i) : 'CAGED'[i];   // greyed-out placeholders
                 const hint = document.createElement('small');
                 btn.appendChild(hint);
                 if (supported) {
-                    const sh = shapes[i];
                     hint.textContent = 'frets ' + sh.lo + '\u2013' + sh.hi;
-                    btn.title = 'Shape ' + (i + 1) + ', frets ' + sh.lo + ' to ' + sh.hi;
+                    btn.title = sh.letter
+                        ? sh.letter + ' shape: built around the open ' + sh.letter + ' chord shape, frets ' + sh.lo + ' to ' + sh.hi
+                        : 'Shape ' + (i + 1) + ', frets ' + sh.lo + ' to ' + sh.hi;
                 } else {
                     btn.disabled = true;
                     btn.title = 'Shapes need Standard, E\u266d Standard or D Standard tuning';
