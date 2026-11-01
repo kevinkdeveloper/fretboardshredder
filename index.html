@@ -227,6 +227,10 @@
         .mode-tab.active { background: var(--accent); color: var(--accent-text); }
         body.mode-scales .chords-only, body.mode-chords .scales-only { display: none !important; }
 
+        .chord-info { width: 100%; margin: -4px 0 10px; font-size: 0.85rem; color: #aaa; min-height: 1.2em; }
+        .chord-info strong { color: #eee; }
+        .chord-info .shape-order { color: #777; }
+        .chord-info .tab-shape { font-family: ui-monospace, Menlo, Consolas, monospace; color: var(--accent); letter-spacing: 1px; }
 
         /* Strings left out of a chord shape get an X at the nut */
         .note-fret.nut.muted::before {
@@ -418,6 +422,8 @@
             .top-bar h1 { margin: 0; }
             .mode-tabs { margin-bottom: 0; padding: 2px; }
             .mode-tab { padding: 3px 14px; font-size: 0.8rem; }
+            .chord-info { margin: -2px 0 4px; font-size: 0.75rem; }
+            .chord-info .shape-order { display: none; }
             .controls { padding: 6px 10px; gap: 8px; margin-bottom: 6px; flex-wrap: nowrap; }
             .control-group { min-width: 0; }
             label { margin-bottom: 2px; font-size: 0.65rem; }
@@ -492,6 +498,7 @@
         <!-- Numbered shape buttons are added by the script: one per position up to fret 24 -->
         <span class="shape-note" id="shapeNote" hidden>Shapes are available in Standard, E♭ Standard and D Standard tuning</span>
     </div>
+    <p class="chord-info chords-only" id="chordInfo"></p>
 
     <div class="fretboard-scroll" id="fretboardScroll">
     <div class="fretboard-container">
@@ -714,6 +721,7 @@
         /* ---------- Scales / Chords mode ---------- */
         let mode = 'scales';
         const chordSelect = document.getElementById('chordType');
+        const chordInfo = document.getElementById('chordInfo');
         const modeTabs = Array.from(document.querySelectorAll('.mode-tab'));
         let activeMuted = [];   // strings (display index) left out of the selected chord shape
 
@@ -910,6 +918,20 @@
                 : 'Play up and back down the run until you press Stop';
             // Chords open on their first shape; scales open on the full neck
             selectShape(mode === 'chords' ? 0 : null);
+        }
+
+        function updateChordInfo() {
+            if (mode !== 'chords') return;
+            const root = parseInt(rootSelect.value);
+            const def = CHORD_TYPES[chordSelect.value];
+            const names = def.iv.map(i => noteNames[(root + i) % 12]);
+            const chordName = def.power ? noteNames[root] + '5 power chord' : noteNames[root] + ' ' + chordSelect.value;
+            let text = '<strong>' + chordName + '</strong>: ' + names.join(' \u00b7 ');
+            if (activeShape !== null) {
+                const sh = allShapes()[activeShape];
+                if (sh) text += ' &nbsp; ' + (sh.letter ? sh.letter + ' shape' : 'Shape') + ' <span class="tab-shape">' + sh.frets.map(f => f < 0 ? 'x' : f).join(' ') + '</span> <span class="shape-order">(lowest string \u2192 highest)</span>';
+            }
+            chordInfo.innerHTML = text;
         }
 
         /* ---------- Scale shapes ---------- */
@@ -1126,6 +1148,7 @@
             }
             updateShapeButtons();
             updateFretboard();
+            updateChordInfo();
             if (k !== null) revealRange();
         }
 
@@ -1433,6 +1456,7 @@
                 activeShapeKeys = null;
                 activeMuted = [];
                 updateShapeButtons();
+                updateChordInfo();
             }
             updateFretboard();
         }
