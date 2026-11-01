@@ -292,6 +292,17 @@
         .shape-btn.active small { color: var(--accent); }
         .shape-btn:disabled { opacity: 0.35; cursor: not-allowed; }
         .shape-note { font-size: 0.75rem; color: #888; margin-left: 6px; }
+        .pos-system {
+            display: inline-flex; flex: 0 0 auto; border: 1px solid #555; border-radius: 6px;
+            overflow: hidden; margin-right: 6px;
+        }
+        .pos-sys-btn {
+            background: transparent; color: #bbb; border: none; padding: 0 10px; min-height: 36px;
+            font-family: inherit; font-size: 0.8rem; font-weight: bold; cursor: pointer; white-space: nowrap;
+        }
+        .pos-sys-btn + .pos-sys-btn { border-left: 1px solid #555; }
+        .pos-sys-btn:hover { color: #fff; }
+        .pos-sys-btn.active { background: var(--accent); color: var(--accent-text); }
         @media (max-width: 600px) {
             .shape-btn { min-width: 38px; padding: 2px 6px; font-size: 0.85rem; }
             .shape-btn small { font-size: 0.55rem; }
@@ -378,6 +389,7 @@
             .shape-bar::-webkit-scrollbar { display: none; }
             .shape-btn { flex: 0 0 auto; min-height: 44px; }
             .shape-note { flex: 0 0 auto; }
+            .pos-sys-btn { min-height: 44px; }
 
             /* Fretboard: keep frets wide enough to read and tap, and scroll sideways */
             .fretboard-scroll {
@@ -475,7 +487,13 @@
     </div>
 
     <div class="shape-bar" id="shapeBar" role="group" aria-label="Scale shape">
-        <span class="shape-bar-label" title="The CAGED system names each position after the open chord shape it's built around: C, A, G, E or D">CAGED shape</span>
+        <span class="shape-bar-label">Positions</span>
+        <div class="pos-system scales-only" role="group" aria-label="Position system">
+            <button class="pos-sys-btn active" data-sys="caged" aria-pressed="true"
+                title="CAGED: five positions, each named after the open chord shape it's built around (C, A, G, E or D)">CAGED</button>
+            <button class="pos-sys-btn" data-sys="3nps" aria-pressed="false"
+                title="Three notes on every string: seven positions, each starting on a different note of the scale on the low string">3 per string</button>
+        </div>
         <button class="shape-btn active" data-shape="all" aria-pressed="true">Full neck</button>
         <!-- Numbered shape buttons are added by the script: one per position up to fret 24 -->
         <span class="shape-note" id="shapeNote" hidden>Shapes are available in Standard, E♭ Standard and D Standard tuning</span>
@@ -921,6 +939,7 @@
         const fullNeckBtn = shapeBar.querySelector('.shape-btn[data-shape="all"]');
         const shapeNote = document.getElementById('shapeNote');
         const shapeBarLabel = shapeBar.querySelector('.shape-bar-label');
+        const posSysBtns = Array.from(shapeBar.querySelectorAll('.pos-sys-btn'));
         let activeShape = null;      // null = full neck, otherwise an index into allShapes()
         let activeShapeKeys = null;  // Set of "string-fret" for the notes in the active shape
 
@@ -985,10 +1004,57 @@
         // follows the CAGED cycle: E, D, C, A, G, then E again an octave higher.
         const CAGED_BY_POSITION = ['E', 'D', 'C', 'A', 'G'];
 
+        // Which position system the Scales tab uses: 'caged' or '3nps' (three notes per string)
+        let positionSystem = 'caged';
+
+        // Three notes per string: 18 consecutive scale notes starting from scale note `deg` on the
+        // lowest string, three on each string. Works out from pitches, so it suits any tuning.
+        function threeNpsPosition(open, root, intervals, deg) {
+            const pc = p => ((p % 12) + 12) % 12;
+            const pcs = intervals.map(i => pc(root + i));
+            let start = open[0] + pc(pcs[deg] - open[0]);
+            for (let attempt = 0; attempt < 2; attempt++, start += 12) {
+                const seq = [];
+                for (let p = start; seq.length < open.length * 3; p++) if (pcs.includes(pc(p))) seq.push(p);
+                const notes = seq.map((p, i) => [Math.floor(i / 3), p - open[Math.floor(i / 3)]]);
+                const frets = notes.map(([, f]) => f);
+                if (Math.min(...frets) >= 0) return { notes, lo: Math.min(...frets), hi: Math.max(...frets) };
+            }
+            return null;
+        }
+
+        // Every three-notes-per-string position on the neck, in order up the neck. Each is numbered
+        // by the scale note it starts on (1 = starts on the root), so a number is the same fingering in every key.
+        function threeNpsShapes() {
+            const intervals = scales[scaleSelect.value];
+            if (intervals.length !== 7) return [];
+            const open = tunings[tuningSelect.value].slice().reverse();
+            const root = parseInt(rootSelect.value);
+            const found = [];
+            for (let deg = 0; deg < 7; deg++) {
+                const base = threeNpsPosition(open, root, intervals, deg);
+                if (!base) continue;
+                for (let shift = 0; shift <= 24; shift += 12) {
+                    if (base.hi + shift > numberOfFrets) break;
+                    found.push({
+                        notes: base.notes.map(([st, f]) => [st, f + shift]),
+                        lo: base.lo + shift, hi: base.hi + shift, letter: null, num: deg + 1,
+                        startNote: noteNames[(root + intervals[deg]) % 12]
+                    });
+                }
+            }
+            return found.sort((a, b) => a.lo - b.lo || a.hi - b.hi);
+        }
+
+        function threeNpsAvailable() {
+            return scales[scaleSelect.value].length === 7;
+        }
+
         // Every complete position of the five shapes between the nut and fret 24, in order
         // up the neck. The pattern repeats every five: shape 6 is shape 1 an octave higher.
         function allShapes() {
             if (mode === 'chords') return chordShapes();
+            if (positionSystem === '3nps') return threeNpsShapes();
             if (!shapesSupported()) return [];
             const open = tunings[tuningSelect.value].slice().reverse();
             const root = parseInt(rootSelect.value);
@@ -1008,20 +1074,29 @@
 
         // Button label: the CAGED letter when the shape has one, otherwise its position number
         function shapeLabel(sh, i) {
-            return sh.letter || String(i + 1);
+            return sh.letter || String(sh.num || i + 1);
         }
 
         function updateShapeButtons() {
-            shapeBarLabel.textContent = mode === 'chords' ? 'Shape' : 'CAGED shape';
-            const supported = mode === 'chords' || shapesSupported();
+            shapeBarLabel.textContent = mode === 'chords' ? 'Shape' : 'Positions';
+            const nps = mode === 'scales' && positionSystem === '3nps';
+            posSysBtns.forEach(b => {
+                const on = b.dataset.sys === positionSystem;
+                b.classList.toggle('active', on);
+                b.setAttribute('aria-pressed', on);
+            });
+            const supported = mode === 'chords' || (nps ? threeNpsAvailable() : shapesSupported());
             const shapes = allShapes();
             shapeNote.hidden = supported;
+            shapeNote.textContent = nps
+                ? 'Three notes per string works with 7-note scales: major, minor, the modes and harmonic minor'
+                : 'Shapes are available in Standard, E\u266d Standard and D Standard tuning';
             fullNeckBtn.classList.toggle('active', activeShape === null);
             fullNeckBtn.setAttribute('aria-pressed', activeShape === null);
 
             // Rebuild the numbered buttons (the count depends on the key and scale)
             shapeBar.querySelectorAll('.shape-btn[data-shape]:not([data-shape="all"])').forEach(b => b.remove());
-            const shapeBtnsToShow = supported ? shapes.length : 5;   // greyed-out placeholders otherwise
+            const shapeBtnsToShow = supported ? shapes.length : (nps ? 0 : 5);   // greyed-out C A G E D placeholders for CAGED
             for (let i = 0; i < shapeBtnsToShow; i++) {
                 const btn = document.createElement('button');
                 btn.className = 'shape-btn';
@@ -1030,7 +1105,11 @@
                 btn.textContent = sh ? shapeLabel(sh, i) : 'CAGED'[i];   // greyed-out placeholders
                 const hint = document.createElement('small');
                 btn.appendChild(hint);
-                if (supported) {
+                if (supported && sh.num) {
+                    hint.textContent = 'frets ' + sh.lo + '\u2013' + sh.hi;
+                    btn.title = 'Position ' + sh.num + ': three notes per string, starting on ' + sh.startNote +
+                        (sh.num === 1 ? ' (the root)' : ' (scale note ' + sh.num + ')') + ' on the low string, frets ' + sh.lo + ' to ' + sh.hi;
+                } else if (supported) {
                     hint.textContent = 'frets ' + sh.lo + '\u2013' + sh.hi;
                     btn.title = sh.letter
                         ? sh.letter + ' shape: built around the open ' + sh.letter + ' chord shape, frets ' + sh.lo + ' to ' + sh.hi
@@ -1127,6 +1206,13 @@
                 drawFretboard();
                 refreshShape();
             });
+
+            // CAGED / 3 per string switch: keep Full neck if that's selected, otherwise show the first position
+            posSysBtns.forEach(b => b.addEventListener('click', () => {
+                if (b.dataset.sys === positionSystem) return;
+                positionSystem = b.dataset.sys;
+                selectShape(activeShape === null ? null : 0);
+            }));
 
             shapeBar.addEventListener('click', e => {
                 const btn = e.target.closest('.shape-btn');
