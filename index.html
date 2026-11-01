@@ -673,6 +673,19 @@
         const modeTabs = Array.from(document.querySelectorAll('.mode-tab'));
         let activeMuted = [];   // strings (display index) left out of the selected chord shape
 
+        // Chord dropdown, grouped roughly in the order guitar students learn them:
+        // [group heading, [[chord type, name shown in the list], ...]]. (Listing CHORD_TYPES' keys
+        // directly would put number-like names such as "6", "7" and "9" first.)
+        const CHORD_GROUPS = [
+            ["Essentials", [["Major", "Major"], ["Minor", "Minor"], ["7", "7th (dominant)"],
+                            ["5 (Power chord)", "Power chord (5)"]]],
+            ["Sevenths",   [["Minor 7", "Minor 7th"], ["Major 7", "Major 7th"]]],
+            ["Colour",     [["Sus 2", "Sus 2"], ["Sus 4", "Sus 4"], ["Add 9", "Add 9"],
+                            ["6", "6th"], ["Minor 6", "Minor 6th"], ["9", "9th"]]],
+            ["Tension",    [["Diminished", "Diminished"], ["Diminished 7", "Diminished 7th"],
+                            ["Minor 7\u266d5", "Minor 7\u266d5 (half-diminished)"], ["Augmented", "Augmented"]]]
+        ];
+
         const CHORD_TYPES = {
             "Major":            { iv: [0, 4, 7] },
             "Minor":            { iv: [0, 3, 7] },
@@ -692,7 +705,7 @@
             "5 (Power chord)":  { iv: [0, 7], power: true }
         };
 
-        function chordVoicings(open, root, type, maxFret = 24) {
+        function chordVoicings(open, root, type, maxFret = 24, returnAll = false) {
             const def = CHORD_TYPES[type];
             const pc = p => ((p % 12) + 12) % 12;
             const tones = def.iv.map(i => pc(root + i));
@@ -775,6 +788,7 @@
 
             // Keep the best shape per position, then thin to a spread up the neck
             const all = [...best.values()].sort((a, b) => b.score - a.score);
+            if (returnAll) return all;
             const byPos = new Map();
             for (const v of all) {
                 const p = v.frets.some(f => f === 0) ? 0 : v.pos;
@@ -804,19 +818,36 @@
             return null;
         }
 
+        function toChordShape(v, letter) {
+            const notes = [], muted = [];
+            v.frets.forEach((f, st) => { if (f >= 0) notes.push([st, f]); else muted.push(st); });
+            const frets = notes.map(([, f]) => f);
+            return { notes, muted, frets: v.frets, lo: Math.min(...frets), hi: Math.max(...frets), letter };
+        }
+
         function chordShapes() {
             const open = tunings[tuningSelect.value].slice().reverse();
+            const root = parseInt(rootSelect.value), type = chordSelect.value;
             // CAGED names assume standard-style tuning, and aren't used for power chords
-            const useLetters = shapesSupported() && !CHORD_TYPES[chordSelect.value].power;
-            return chordVoicings(open, parseInt(rootSelect.value), chordSelect.value, numberOfFrets).map(v => {
-                const notes = [], muted = [];
-                v.frets.forEach((f, st) => { if (f >= 0) notes.push([st, f]); else muted.push(st); });
-                const frets = notes.map(([, f]) => f);
-                return {
-                    notes, muted, frets: v.frets, lo: Math.min(...frets), hi: Math.max(...frets),
-                    letter: useLetters ? cagedForm(v.frets) : null
-                };
-            });
+            const useLetters = shapesSupported() && !CHORD_TYPES[type].power;
+
+            if (useLetters) {
+                // For each CAGED form, take the best fingering at each place it occurs on the neck
+                // (one per bass-note fret), so the shapes run C, A, G, E, D up the neck.
+                const instances = new Map();
+                for (const v of chordVoicings(open, root, type, numberOfFrets, true)) {
+                    const form = cagedForm(v.frets);
+                    if (!form) continue;
+                    const bassFret = v.frets.find(f => f >= 0);
+                    const key = form + ':' + bassFret;
+                    const prev = instances.get(key);
+                    if (!prev || v.score > prev.v.score) instances.set(key, { v, form });
+                }
+                const list = [...instances.values()].map(({ v, form }) => toChordShape(v, form));
+                if (list.length) return list.sort((a, b) => a.lo - b.lo || a.hi - b.hi);
+            }
+            // Otherwise: a spread of good fingerings up the neck, numbered
+            return chordVoicings(open, root, type, numberOfFrets).map(v => toChordShape(v, null));
         }
 
         function setMode(newMode) {
@@ -1030,12 +1061,18 @@
                 scaleSelect.appendChild(option);
             }
 
-            for (const name of Object.keys(CHORD_TYPES)) {
-                const option = document.createElement('option');
-                option.value = name;
-                option.textContent = name;
-                chordSelect.appendChild(option);
+            for (const [heading, chords] of CHORD_GROUPS) {
+                const group = document.createElement('optgroup');
+                group.label = heading;
+                for (const [type, label] of chords) {
+                    const option = document.createElement('option');
+                    option.value = type;
+                    option.textContent = label;
+                    group.appendChild(option);
+                }
+                chordSelect.appendChild(group);
             }
+            chordSelect.value = 'Major';
             document.body.classList.add('mode-scales');
             modeTabs.forEach(t => t.addEventListener('click', () => setMode(t.dataset.mode)));
 
