@@ -225,28 +225,7 @@
         }
         .mode-tab:hover { color: #fff; }
         .mode-tab.active { background: var(--accent); color: var(--accent-text); }
-        body.mode-scales .chords-only, body.mode-chords .scales-only, body.mode-licks .chords-only,
-        body.mode-scales .licks-only, body.mode-chords .licks-only { display: none !important; }
-
-        /* ---------- Lick tab (fret numbers on six string lines) ---------- */
-        .lick-tab-area { width: 100%; margin-top: 4px; }
-        .lick-tab {
-            display: flex; overflow-x: auto; background: #222; border: 1px solid #3a3a3a;
-            border-radius: 6px; padding: 8px 10px; scrollbar-width: thin; scrollbar-color: #555 transparent;
-            font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 13px;
-        }
-        .tab-col { display: flex; flex-direction: column; flex: 0 0 auto; min-width: calc(var(--dur, 2) * 8px + 12px); border-radius: 4px; }
-        .tab-cell {
-            height: 20px; display: flex; align-items: center; justify-content: center; padding: 0 2px;
-            background: linear-gradient(to bottom, transparent 9.5px, #555 9.5px, #555 10.5px, transparent 10.5px);
-        }
-        .tab-cell b { background: #222; color: #e6e1d6; font-weight: normal; padding: 0 2px; white-space: nowrap; }
-        .tab-col.tab-names { min-width: 18px; }
-        .tab-col.tab-names .tab-cell { background: none; color: #888; justify-content: flex-start; }
-        .tab-col.tab-end { min-width: 6px; border-right: 2px solid #777; border-radius: 0; }
-        .tab-col.now { background: rgba(242, 163, 58, 0.18); }
-        .tab-col.now .tab-cell b { color: var(--accent); background: #3a2f1f; font-weight: bold; }
-        .tab-legend { margin: 6px 0 0; font-size: 0.72rem; color: #777; }
+        body.mode-scales .chords-only, body.mode-chords .scales-only { display: none !important; }
 
         .chord-info { width: 100%; margin: -4px 0 10px; font-size: 0.85rem; color: #aaa; min-height: 1.2em; }
         .chord-info strong { color: #eee; }
@@ -282,7 +261,6 @@
             line-height: 1.1;
         }
         .shape-btn small { font-size: 0.6rem; font-weight: normal; color: #888; }
-        .shape-btn[hidden] { display: none; }
         .shape-btn:hover:not(:disabled) { background: rgba(255, 255, 255, 0.06); }
         .shape-btn.active { border-color: var(--accent); color: var(--accent); background: rgba(242, 163, 58, 0.1); }
         .shape-btn.active small { color: var(--accent); }
@@ -348,7 +326,7 @@
             body { padding: 12px 12px 24px; }
             h1 { font-size: 1.15rem; margin: 2px 0 10px; text-align: center; }
             .mode-tabs { margin-bottom: 10px; }
-            .mode-tab { padding: 8px 20px; font-size: 1rem; }
+            .mode-tab { padding: 8px 28px; font-size: 1rem; }
 
             /* Controls as a tidy two-column grid with thumb-sized targets */
             .controls {
@@ -431,12 +409,11 @@
 <body>
 
     <div class="top-bar">
-        <h1>Fretboard Shredder - Guitar Scales, Chords &amp; Licks</h1>
+        <h1>Fretboard Shredder - Guitar Scale &amp; Chord Trainer</h1>
 
         <div class="mode-tabs" role="tablist" aria-label="Practice mode">
             <button class="mode-tab active" role="tab" aria-selected="true" data-mode="scales">Scales</button>
             <button class="mode-tab" role="tab" aria-selected="false" data-mode="chords">Chords</button>
-            <button class="mode-tab" role="tab" aria-selected="false" data-mode="licks">Licks</button>
         </div>
     </div>
     
@@ -478,7 +455,6 @@
         <span class="shape-note" id="shapeNote" hidden>Shapes are available in Standard, E♭ Standard and D Standard tuning</span>
     </div>
     <p class="chord-info chords-only" id="chordInfo"></p>
-    <p class="chord-info licks-only" id="lickInfo"></p>
 
     <div class="fretboard-scroll" id="fretboardScroll">
     <div class="fretboard-container">
@@ -493,11 +469,6 @@
     </div>
     </div>
     <p class="swipe-hint">Swipe the fretboard to see all 24 frets</p>
-
-    <div class="lick-tab-area licks-only">
-        <div class="lick-tab" id="lickTab" aria-label="Tab for the selected lick"></div>
-        <p class="tab-legend">h hammer-on &middot; p pull-off &middot; / \ slide &middot; b bend &middot; r release &middot; ~ vibrato</p>
-    </div>
 
     <script>
         const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
@@ -543,8 +514,7 @@
         }
 
         // keepRinging: let earlier notes keep sounding (used to strum a chord)
-        // velocity: loudness multiplier (hammer-ons and pull-offs are played softer)
-        function playTone(midiNote, keepRinging = false, velocity = 1) {
+        function playTone(midiNote, keepRinging = false) {
             if (audioCtx.state === 'suspended') audioCtx.resume();
             if (!reverbNode) initReverb();
 
@@ -620,31 +590,9 @@
             if (keepRinging) masterGain.gain.value *= 0.42;
 
             source.start();
-            masterGain.gain.value *= velocity;
-            const voice = { source, gain: masterGain, midi: midiNote };
+            const voice = { source, gain: masterGain };
             activeVoices.push(voice);
             source.onended = () => { activeVoices = activeVoices.filter(v => v !== voice); };
-            return voice;
-        }
-
-        // Glide a sounding note to another pitch (slides, bends and releases)
-        function glideVoice(voice, targetMidi, seconds) {
-            const param = voice.source.playbackRate, now = audioCtx.currentTime;
-            param.cancelScheduledValues(now);
-            param.setValueAtTime(param.value, now);
-            param.linearRampToValueAtTime(Math.pow(2, (targetMidi - voice.midi) / 12), now + seconds);
-        }
-
-        // Gentle pitch wobble on a sounding note
-        function vibratoVoice(voice, seconds) {
-            const now = audioCtx.currentTime;
-            const lfo = audioCtx.createOscillator(), depth = audioCtx.createGain();
-            lfo.frequency.value = 5.5;
-            depth.gain.setValueAtTime(0, now);
-            depth.gain.linearRampToValueAtTime(0.014, now + Math.min(0.25, seconds / 2));
-            lfo.connect(depth).connect(voice.source.playbackRate);
-            lfo.start(now);
-            lfo.stop(now + seconds + 0.05);
         }
 
         const noteNames = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"];
@@ -718,254 +666,7 @@
         let isPlaying = false;
         let shouldStop = false;
 
-        /* ---------- Licks ---------- */
-        // Each lick is written once, relative to the scale's root, so it works in every key.
-        // Notation, one token per note, separated by spaces:
-        //   S:deg[mods][/dur]
-        //   S    string: E A D G B e (low to high)
-        //   deg  scale degree: 1-7 with optional b or # (b3, #4, b7 ...)
-        //   mods h = hammer-on / pull-off from the previous note
-        //        s = slide from the previous note      r = release a bend back to this note
-        //        b1 / b2 = bend up 1 or 2 semitones    ~ = vibrato
-        //        @N = look N frets higher (or lower) than the lick's position for this note
-        //   dur  length in sixteenth notes (default 2 = an eighth note); t = eighth-note triplet
-        //   -/dur is a rest.
-        // pos: where the lick sits, in frets from the root on the low E string (0 = root under the
-        // first finger, the E-shape / "box 1" area; -1 for major-type scales whose position starts a
-        // fret below the root).
-        const LICKS = {
-            "Pentatonic Minor": [
-                { name: "Bend & resolve", pos: 0, desc: "The classic box 1 move: bend the ♭7 up to the root, then bend the 4th up to the 5th and settle on the root.",
-                  notes: "B:b7b2/4 e:1/2 B:b7/2 G:4b2/4 G:4r/2 G:b3/2 D:1~/8" },
-                { name: "Box 1 descent", pos: 0, desc: "A fast run down the whole box with pull-offs on every string.",
-                  notes: "e:b3/1 e:1h/1 B:b7/1 B:5h/1 G:4/1 G:b3h/1 D:1/1 D:b7h/1 A:5/1 A:4h/1 E:b3/1 E:1h~/9" },
-                { name: "Slide to box 2", pos: 2, desc: "Slides up the G string to join box 1 to box 2, with a bend at the top.",
-                  notes: "G:b3/2 G:4/2 G:5s/4 B:b7/2 B:1/2 e:b3/2 e:4b2/4 e:4r/2 e:b3/2 B:1~/6" },
-                { name: "Triplet repeat", pos: 0, desc: "A repeating rock triplet across the top strings, finished with a big bend.",
-                  notes: "e:1/t B:b7/t B:5/t e:1/t B:b7/t B:5/t e:1/t B:b7/t B:5/t e:1/t B:b7/t B:5/t G:4b2~/8" },
-                { name: "Low-string groove", pos: 0, desc: "A riff on the bass strings, ending on the root with vibrato.",
-                  notes: "E:1/2 -/1 E:1/1 E:b3/2 A:4/2 A:5/2 A:4h/2 E:b3/2 E:1~/4 -/2" }
-            ],
-            "Blues": [
-                { name: "Blue note walk", pos: 0, desc: "Walks up through the ♭5 blue note, then curls the ♭3 up towards the major 3rd.",
-                  notes: "A:4/2 A:b5/2 A:5/2 D:b7/2 D:1/4 -/2 G:b3b1/4 D:1/2 D:b7/2 A:5~/6" },
-                { name: "Curl & shuffle", pos: 0, desc: "A quarter-tone style curl on the high string, then a triplet shuffle down through the blue note.",
-                  notes: "e:b3b1/4 e:1/t B:b7/t B:5/t G:b5/t G:4/t G:b3/t D:1~/8" },
-                { name: "Blues descent", pos: 0, desc: "The full blues scale from top to bottom, hitting the ♭5 on the way.",
-                  notes: "e:b3/2 e:1/2 B:b7/2 B:5/2 G:b5/2 G:4/2 G:b3/2 D:1/2 A:5/2 A:b5/2 A:4/2 E:b3/2 E:1~/8" },
-                { name: "Box 2 bend", pos: 2, desc: "Up through the blue note in box 2, a bend to the root and back, then down to the root.",
-                  notes: "G:4/2 G:b5/2 G:5/2 B:b7b2/4 B:b7r/2 G:5/2 G:b5h/2 G:4h/2 D:1~/6" },
-                { name: "Repeating bend", pos: 0, desc: "Bend, ♭7, root, three times over: a staple blues and rock phrase.",
-                  notes: "G:4b2/2 B:b7/2 e:1/2 G:4b2/2 B:b7/2 e:1/2 G:4b2/2 B:b7/2 e:1~/8" }
-            ],
-            "Pentatonic Major": [
-                { name: "Country slide", pos: -1, desc: "Slides into the major 3rd and rolls down to the root, with a country flavour.",
-                  notes: "G:2/2 G:3s/2 B:5/2 B:6/2 e:1/4 B:6/2 B:5/2 G:3/2 G:2h/2 D:1~/6" },
-                { name: "Major bends", pos: -1, desc: "Bends the 5th up to the 6th and the 2nd up to the 3rd: sweet major-sounding bends.",
-                  notes: "B:5b2/4 B:5r/2 G:3/2 G:2b2/4 G:2r/2 D:1~/6" },
-                { name: "Pentatonic climb", pos: -1, desc: "Straight up the major pentatonic from the low root to the top, sliding into the 3rd.",
-                  notes: "E:1/1 E:2/1 A:3/1 A:5/1 D:6/1 D:1/1 G:2/1 G:3/1 B:5/1 B:6/1 e:1/1 e:2/1 e:3s@2~/4" },
-                { name: "Sweet sixth", pos: -1, desc: "A melodic phrase that leans on the 6th, the note that gives major pentatonic its sweetness.",
-                  notes: "e:2/2 e:1/2 B:6/2 B:5/2 B:6h/2 e:1/4 -/2 B:6/2 G:3~/6" }
-            ],
-            "Major": [
-                { name: "Arpeggio & turn", pos: -1, desc: "Climbs the major chord (1, 3, 5) up to the top root, turns around it and steps back down.",
-                  notes: "E:1/1 A:3/1 A:5/1 D:1/1 G:3/1 B:5/1 e:1/2 e:7h/1 e:1h/1 B:6/2 B:5/2 G:4/2 G:3~/4" },
-                { name: "Sequence in threes", pos: -1, desc: "The scale in groups of three (1 2 3, 2 3 4, 3 4 5 ...): a core technique exercise.",
-                  notes: "E:1/t E:2/t A:3/t E:2/t A:3/t A:4/t A:3/t A:4/t A:5/t A:4/t A:5/t D:6/t A:5/t D:6/t D:7/t D:6/t D:7/t D:1/t D:1~/4" },
-                { name: "Bend to the 3rd", pos: -1, desc: "Bends the 2nd up to the major 3rd, then resolves through the 7th to the root.",
-                  notes: "B:5/2 B:6/2 e:1/2 B:6/2 G:2b2/4 G:2r/2 D:7/2 D:1~/6" },
-                { name: "Melodic descent", pos: -1, desc: "A singing line down the top strings, landing on the 3rd and then the root.",
-                  notes: "e:2/2 e:1/2 e:7/2 B:6/4 B:5/2 G:4/2 G:3/4 D:1~/8" }
-            ],
-            "Minor (Natural)": [
-                { name: "♭6 sigh", pos: 0, desc: "Leans on the ♭6 falling to the 5th: the sad sound of natural minor.",
-                  notes: "e:2/2 e:b3/2 e:2/2 e:1/2 B:b7/2 B:b6/4 B:5~/6" },
-                { name: "Minor run up", pos: 0, desc: "The whole natural minor scale from the low root to the top.",
-                  notes: "E:1/1 E:2/1 E:b3/1 A:4/1 A:5/1 A:b6/1 D:b7/1 D:1/1 D:2/1 G:b3/1 G:4/1 G:5/1 B:b6/1 B:b7/1 e:1/1 e:2/1 e:b3~/6" },
-                { name: "Bend the 4th", pos: 0, desc: "Bends the 4th up to the 5th and walks down to the 5th on the A string.",
-                  notes: "G:4b2/4 G:4r/2 G:b3/2 D:1/2 D:b7/2 A:b6/2 A:5~/6" },
-                { name: "Call & answer", pos: 0, desc: "A rising call, a bend from the ♭3 to the 4th, and an answer back down to the root.",
-                  notes: "A:5/2 D:b7/2 D:1/2 D:2/2 G:b3b2/4 G:b3r/2 D:2/2 D:1~/8" }
-            ],
-            "Dorian": [
-                { name: "Dorian 6th hook", pos: 0, desc: "Holds the natural 6th: the note that makes Dorian brighter than natural minor.",
-                  notes: "D:1/2 G:b3/2 G:4/2 B:5/2 B:6/4 B:5/2 G:4/2 G:b3/2 D:1~/6" },
-                { name: "Minor 6 climb", pos: 0, desc: "Climbs a minor 6 arpeggio (1, ♭3, 5, 6) up to the top root.",
-                  notes: "A:5/2 D:6/2 D:1/2 G:b3/2 B:5/2 B:6/2 e:1~/4" },
-                { name: "Bend to the 6", pos: 0, desc: "Bends the 5th up to the 6th, then rocks between the ♭3 and 4th.",
-                  notes: "B:5b2/4 B:5r/2 G:4/2 G:b3/2 G:4/2 B:5~/6" },
-                { name: "Funky sixteenths", pos: 0, desc: "A syncopated funk phrase built around the root, ♭3, 4th and 6th.",
-                  notes: "G:b3/1 G:4/1 -/1 G:4/1 G:b3h/1 D:1/1 -/1 D:6/1 D:1/2 -/2 B:6/2 B:5~/4" }
-            ],
-            "Mixolydian": [
-                { name: "Dominant ♭7", pos: -1, desc: "Holds the ♭7, the note that gives Mixolydian its bluesy, dominant sound.",
-                  notes: "G:3/2 B:5/2 B:6/2 B:b7/4 B:6/2 B:5/2 G:3/2 D:1~/6" },
-                { name: "Rock 'n' roll bend", pos: -1, desc: "Slides from the ♭7 into the root, then bends the 6th up to the ♭7.",
-                  notes: "D:b7/2 D:1s/2 G:3/2 B:5/2 B:6b1/4 B:6r/2 B:5/2 G:3/2 G:2h/2 D:1~/6" },
-                { name: "Mixolydian descent", pos: -1, desc: "Runs down the whole position, passing the ♭7 on every octave.",
-                  notes: "e:2/1 e:1/1 e:b7/1 B:6/1 B:5/1 G:4/1 G:3/1 G:2/1 D:1/1 D:b7/1 D:6/1 A:5/1 A:4/1 A:3/1 E:2/1 E:1~/8" }
-            ],
-            "Lydian": [
-                { name: "Raised 4th shimmer", pos: -1, desc: "Circles the raised 4th: the dreamy, floating note of Lydian.",
-                  notes: "G:3/2 G:#4/2 B:5/2 G:#4/2 G:3/2 G:#4/2 B:5/4 B:6/2 e:7/2 e:1~/6" },
-                { name: "Lydian climb", pos: -1, desc: "Climbs the scale, stepping on the raised 4th in two octaves.",
-                  notes: "E:1/1 A:3/1 A:#4/1 A:5/1 D:7/1 D:1/1 G:3/1 G:#4/1 B:5/1 B:6/1 e:7/1 e:1/1 e:2~/4" },
-                { name: "Bend into #4", pos: -1, desc: "Bends the major 3rd up to the raised 4th and floats back down.",
-                  notes: "B:5/2 G:3b2/4 G:3r/2 G:2/2 D:1~/6" }
-            ],
-            "Phrygian": [
-                { name: "Spanish ♭2", pos: 0, desc: "Rocks between the root and the ♭2, the dark, Spanish-sounding note of Phrygian.",
-                  notes: "E:1/2 E:b2/2 E:1/2 -/2 E:1/1 E:b2/1 E:b3/2 E:b2h/2 E:1h~/6" },
-                { name: "Dark descent", pos: 0, desc: "Falls through the scale and resolves from the ♭2 down to the root.",
-                  notes: "e:b3/2 e:b2/2 e:1/2 B:b7/2 B:b6/2 B:5/2 G:4/2 G:b3/2 D:b2/2 D:1~/6" },
-                { name: "Metal gallop", pos: 0, desc: "A galloping low-string metal riff using the ♭2 and ♭3.",
-                  notes: "E:1/2 E:1/1 E:1/1 E:b2/2 E:1/1 E:1/1 E:1/2 E:1/1 E:1/1 E:b3/2 E:b2/2 E:1~/4" }
-            ],
-            "Phrygian Dominant": [
-                { name: "Exotic descent", pos: 0, desc: "Runs down through the ♭6 and the major 3rd, ending ♭2 to root.",
-                  notes: "e:b2/2 e:1/2 B:b7/2 B:b6/2 B:5/2 G:4/2 G:3/2 G:4/2 G:3/2 D:b2/2 D:1~/6" },
-                { name: "The big jump", pos: 0, desc: "The jump from the ♭2 up to the major 3rd: the gap that makes this scale sound Middle Eastern.",
-                  notes: "E:1/2 E:b2/2 E:3/2 A:4/2 E:3/2 E:b2/2 E:1~/4" },
-                { name: "Dominant arpeggio", pos: 0, desc: "Up and down the major chord with the ♭6 as a crying neighbour note.",
-                  notes: "D:1/1 G:3/1 B:5/1 B:b6/1 B:5/1 G:3/1 D:1/1 G:3/1 B:5/1 B:b6/1 B:5/1 G:3/1 D:1~/4" }
-            ],
-            "Harmonic Minor": [
-                { name: "Leading tone", pos: 0, desc: "Uses the raised 7th to pull strongly back to the root, at both ends of the phrase.",
-                  notes: "D:7/2 D:1/2 G:b3/2 G:4/2 B:5/2 B:b6/2 B:5/2 G:4/2 G:b3/2 D:1/2 D:7/2 D:1~/4" },
-                { name: "Diminished run", pos: 0, desc: "Climbs the diminished chord hidden in harmonic minor (7, 2, 4, ♭6), then resolves.",
-                  notes: "D:7/1 G:2/1 G:4/1 B:b6/1 e:7/1 e:2/1 e:b3/2 e:2h/1 e:1h/1 e:7/2 e:1~/6" },
-                { name: "Neoclassical", pos: 0, desc: "Shred-style four-note groups down the scale, in the style of neoclassical metal.",
-                  notes: "e:b3/1 e:2/1 e:1/1 e:2/1 e:1/1 e:7/1 e:1/1 B:b6/1 e:7/1 B:b6/1 B:5/1 B:b6/1 B:5/1 G:4/1 G:b3/1 G:4/1 G:b3/1 D:1/1 D:7/1 D:1~/7" }
-            ],
-            "Locrian": [
-                { name: "Unstable ♭5", pos: 0, desc: "Climbs to the ♭5, the tense note that makes Locrian sound unresolved.",
-                  notes: "E:1/2 E:b2/2 E:b3/2 A:4/2 A:b5~/4 A:4/2 E:b3/2 E:b2/2 E:1~/6" },
-                { name: "Diminished arpeggio", pos: 0, desc: "Up and down the half-diminished chord (1, ♭3, ♭5, ♭7).",
-                  notes: "E:1/1 E:b3/1 A:b5/1 D:b7/1 D:1/1 G:b3/1 G:b5/1 B:b7/1 e:1/2 B:b7/1 G:b5/1 G:b3/1 D:1/1 D:b7/1 A:b5/1 E:b3/1 E:1~/6" },
-                { name: "Locrian riff", pos: 0, desc: "A dark low-string metal riff using the ♭2 and ♭5.",
-                  notes: "E:1/1 E:1/1 E:b2/2 E:1/1 E:1/1 A:b5/2 E:1/1 E:1/1 E:b3/2 E:b2/2 E:1~/4" }
-            ]
-        };
-
-        const LICK_STRINGS = { E: 0, A: 1, D: 2, G: 3, B: 4, e: 5 };
-        const DEGREE_SEMITONES = [0, 2, 4, 5, 7, 9, 11];
-
-        function parseLick(text) {
-            return text.trim().split(/\s+/).map(tok => {
-                const rest = tok.match(/^-(?:\/(\d+|t))?$/);
-                const durOf = d => d === undefined ? 2 : d === 't' ? 4 / 3 : parseInt(d);
-                if (rest) return { rest: true, dur: durOf(rest[1]) };
-                const m = tok.match(/^([EADGBe]):([b#]?)(\d)((?:h|s|r|~|b[12]|@-?\d+)*)(?:\/(\d+|t))?$/);
-                if (!m) throw new Error('Bad lick token: ' + tok);
-                const mods = m[4];
-                const bend = mods.match(/b([12])/);
-                const shift = mods.match(/@(-?\d+)/);
-                return {
-                    st: LICK_STRINGS[m[1]],
-                    interval: DEGREE_SEMITONES[parseInt(m[3]) - 1] + (m[2] === 'b' ? -1 : m[2] === '#' ? 1 : 0),
-                    degree: m[2] + m[3],
-                    hammer: mods.includes('h'), slide: mods.includes('s'), release: mods.includes('r'),
-                    vibrato: mods.includes('~'), bend: bend ? parseInt(bend[1]) : 0,
-                    shift: shift ? parseInt(shift[1]) : 0,
-                    dur: durOf(m[5])
-                };
-            });
-        }
-
-        // Places a lick on the neck for a root and tuning (open: lowest string first).
-        // Returns events with frets and pitches, or null if it can't fit on a 24-fret neck.
-        function placeLick(lick, open, root, maxFret = 24) {
-            const pc = p => ((p % 12) + 12) % 12;
-            const events = parseLick(lick.notes);
-            const rootFret = pc(root - open[0]);
-            for (const r of [rootFret, rootFret + 12]) {
-                let ok = true;
-                const placed = events.map(ev => {
-                    if (ev.rest) return ev;
-                    const centre = r + lick.pos + 1.5 + ev.shift;
-                    const base = pc(root + ev.interval - open[ev.st]);
-                    let best = null;
-                    for (let f = base - 12; f <= maxFret + 12; f += 12) {
-                        if (best === null || Math.abs(f - centre) < Math.abs(best - centre)) best = f;
-                    }
-                    if (best < 0 || best + ev.bend > maxFret + 2 || best > maxFret) ok = false;
-                    return { ...ev, fret: best, midi: open[ev.st] + best };
-                });
-                if (ok) return placed;
-            }
-            return null;
-        }
-
-        const lickInfo = document.getElementById('lickInfo');
-        const lickTab = document.getElementById('lickTab');
-
-        // The current scale's licks, placed for the current root and tuning, in the same form as shapes
-        function lickShapes() {
-            if (!shapesSupported()) return [];
-            const open = tunings[tuningSelect.value].slice().reverse();
-            const root = parseInt(rootSelect.value);
-            return (LICKS[scaleSelect.value] || []).map(lick => {
-                const events = placeLick(lick, open, root, numberOfFrets);
-                if (!events) return null;
-                const played = events.filter(e => !e.rest);
-                const seen = new Set(), notes = [];
-                played.forEach(e => { const k = e.st + ':' + e.fret; if (!seen.has(k)) { seen.add(k); notes.push([e.st, e.fret]); } });
-                const frets = played.map(e => e.fret);
-                return { notes, lo: Math.min(...frets), hi: Math.max(...frets), letter: null, lick, events };
-            }).filter(Boolean);
-        }
-
-        function updateLickInfo() {
-            if (mode !== 'licks') return;
-            const sh = activeShape !== null ? allShapes()[activeShape] : null;
-            if (!sh) {
-                lickInfo.textContent = shapesSupported() ? 'Pick a lick above to see it on the fretboard.' : '';
-                lickTab.innerHTML = '';
-                return;
-            }
-            lickInfo.innerHTML = '<strong>Lick ' + (activeShape + 1) + ': ' + sh.lick.name + '</strong> \u2013 ' + sh.lick.desc;
-            renderLickTab(sh.events);
-        }
-
-        // Tab: one column per note, fret numbers on six string lines (high e at the top)
-        function renderLickTab(events) {
-            const names = ['e', 'B', 'G', 'D', 'A', 'E'];
-            let html = '<div class="tab-col tab-names">' + names.map(n => '<span class="tab-cell">' + n + '</span>').join('') + '</div>';
-            let prev = null;
-            events.forEach((ev, i) => {
-                let cells = '';
-                for (let row = 0; row < 6; row++) {
-                    let txt = '';
-                    if (!ev.rest && ev.st === 5 - row) {
-                        const lead = ev.hammer ? (prev && prev.fret > ev.fret ? 'p' : 'h')
-                                   : ev.slide ? (prev && prev.fret > ev.fret ? '\\' : '/')
-                                   : ev.release ? 'r' : '';
-                        txt = lead + ev.fret + (ev.bend ? 'b' + (ev.fret + ev.bend) : '') + (ev.vibrato ? '~' : '');
-                    }
-                    cells += '<span class="tab-cell">' + (txt ? '<b>' + txt + '</b>' : '') + '</span>';
-                }
-                html += '<div class="tab-col" data-i="' + i + '" style="--dur:' + ev.dur.toFixed(2) + '">' + cells + '</div>';
-                if (!ev.rest) prev = ev;
-            });
-            html += '<div class="tab-col tab-end">' + '<span class="tab-cell"></span>'.repeat(6) + '</div>';
-            lickTab.innerHTML = html;
-            lickTab.scrollLeft = 0;
-        }
-
-        // Highlight the tab column being played (i = -1 clears it), keeping it in view
-        function markTabColumn(i) {
-            lickTab.querySelectorAll('.tab-col.now').forEach(c => c.classList.remove('now'));
-            const col = lickTab.querySelector('.tab-col[data-i="' + i + '"]');
-            if (!col) return;
-            col.classList.add('now');
-            const left = col.offsetLeft - lickTab.offsetLeft, right = left + col.offsetWidth;
-            if (left < lickTab.scrollLeft + 20 || right > lickTab.scrollLeft + lickTab.clientWidth - 20) {
-                lickTab.scrollTo({ left: left - lickTab.clientWidth / 3, behavior: 'smooth' });
-            }
-        }
-
-        /* ---------- Scales / Chords / Licks mode ---------- */
+        /* ---------- Scales / Chords mode ---------- */
         let mode = 'scales';
         const chordSelect = document.getElementById('chordType');
         const chordInfo = document.getElementById('chordInfo');
@@ -1154,18 +855,17 @@
             mode = newMode;
             document.body.classList.toggle('mode-scales', mode === 'scales');
             document.body.classList.toggle('mode-chords', mode === 'chords');
-            document.body.classList.toggle('mode-licks', mode === 'licks');
             modeTabs.forEach(t => {
                 const on = t.dataset.mode === mode;
                 t.classList.toggle('active', on);
                 t.setAttribute('aria-selected', on);
             });
             if (isPlaying) shouldStop = true;
-            loopBtn.title = mode === 'chords' ? 'Repeat the chord until you press Stop'
-                          : mode === 'licks' ? 'Repeat the lick until you press Stop'
-                          : 'Play up and back down the run until you press Stop';
-            // Chords and licks open on their first one; scales open on the full neck
-            selectShape(mode === 'scales' ? null : 0);
+            loopBtn.title = mode === 'chords'
+                ? 'Repeat the chord until you press Stop'
+                : 'Play up and back down the run until you press Stop';
+            // Chords open on their first shape; scales open on the full neck
+            selectShape(mode === 'chords' ? 0 : null);
         }
 
         function updateChordInfo() {
@@ -1255,7 +955,6 @@
         // up the neck. The pattern repeats every five: shape 6 is shape 1 an octave higher.
         function allShapes() {
             if (mode === 'chords') return chordShapes();
-            if (mode === 'licks') return lickShapes();
             if (!shapesSupported()) return [];
             const open = tunings[tuningSelect.value].slice().reverse();
             const root = parseInt(rootSelect.value);
@@ -1279,10 +978,7 @@
         }
 
         function updateShapeButtons() {
-            shapeBarLabel.textContent = mode === 'chords' ? 'Shape' : mode === 'licks' ? 'Lick' : 'CAGED shape';
-            fullNeckBtn.hidden = mode === 'licks';
-            shapeNote.textContent = (mode === 'licks' ? 'Licks are' : 'Shapes are') +
-                ' available in Standard, E\u266d Standard and D Standard tuning';
+            shapeBarLabel.textContent = mode === 'chords' ? 'Shape' : 'CAGED shape';
             const supported = mode === 'chords' || shapesSupported();
             const shapes = allShapes();
             shapeNote.hidden = supported;
@@ -1291,8 +987,7 @@
 
             // Rebuild the numbered buttons (the count depends on the key and scale)
             shapeBar.querySelectorAll('.shape-btn[data-shape]:not([data-shape="all"])').forEach(b => b.remove());
-            // greyed-out C A G E D placeholders for scales in tunings without shapes
-            const shapeBtnsToShow = supported ? shapes.length : (mode === 'scales' ? 5 : 0);
+            const shapeBtnsToShow = supported ? shapes.length : 5;   // greyed-out placeholders otherwise
             for (let i = 0; i < shapeBtnsToShow; i++) {
                 const btn = document.createElement('button');
                 btn.className = 'shape-btn';
@@ -1301,10 +996,7 @@
                 btn.textContent = sh ? shapeLabel(sh, i) : 'CAGED'[i];   // greyed-out placeholders
                 const hint = document.createElement('small');
                 btn.appendChild(hint);
-                if (supported && sh.lick) {
-                    hint.textContent = sh.lick.name;
-                    btn.title = sh.lick.desc;
-                } else if (supported) {
+                if (supported) {
                     hint.textContent = 'frets ' + sh.lo + '\u2013' + sh.hi;
                     btn.title = sh.letter
                         ? sh.letter + ' shape: built around the open ' + sh.letter + ' chord shape, frets ' + sh.lo + ' to ' + sh.hi
@@ -1344,7 +1036,6 @@
             updateShapeButtons();
             updateFretboard();
             updateChordInfo();
-            updateLickInfo();
             if (k !== null) revealRange();
         }
 
@@ -1414,8 +1105,7 @@
                 if (e.target.closest('input, select, textarea')) return;
                 const count = allShapes().length;
                 if (!count) return;
-                const numbered = Array.from({ length: count }, (_, i) => i);
-                const order = mode === 'licks' ? numbered : [null, ...numbered];   // no Full neck for licks
+                const order = [null, ...Array.from({ length: count }, (_, i) => i)];
                 const i = order.indexOf(activeShape);
                 const next = order[(i + (e.key === 'ArrowRight' ? 1 : order.length - 1)) % order.length];
                 e.preventDefault();
@@ -1746,51 +1436,12 @@
             } while (loopBtn.classList.contains('active') && !shouldStop);
         }
 
-        function noteAt(st, fret) {
-            return fretboardEl.querySelector('.note-display[data-string="' + (5 - st) + '"][data-fret="' + fret + '"]');
-        }
-
-        // Lick: plays in rhythm (durations in sixteenth notes at the current tempo) with
-        // hammer-ons, pull-offs, slides, bends, releases and vibrato. Loop repeats after a beat's rest.
-        async function playLick() {
-            do {
-                const sh = allShapes()[activeShape];
-                if (!sh) break;
-                let voice = null;
-                for (let i = 0; i < sh.events.length; i++) {
-                    if (shouldStop) break;
-                    const ev = sh.events[i];
-                    const ms = ev.dur * beatMs() / 4;
-                    markTabColumn(i);
-                    if (ev.rest) { silenceAll(); voice = null; await wait(ms); continue; }
-                    if ((ev.slide || ev.release) && voice) {
-                        glideVoice(voice, ev.midi, Math.min(ev.release ? 0.14 : 0.09, ms / 2000));
-                    } else {
-                        voice = playTone(ev.midi, false, ev.hammer ? 0.55 : 1);
-                    }
-                    if (ev.bend) glideVoice(voice, ev.midi + ev.bend, Math.min(0.22, ms * 0.45 / 1000));
-                    if (ev.vibrato) vibratoVoice(voice, ms / 1000);
-                    const el = noteAt(ev.st, ev.fret);
-                    if (el) { el.classList.add('playing'); revealNote(el); }
-                    await wait(ms);
-                    if (el) el.classList.remove('playing');
-                }
-                markTabColumn(-1);
-                if (loopBtn.classList.contains('active') && !shouldStop) await wait(beatMs());
-            } while (loopBtn.classList.contains('active') && !shouldStop);
-        }
-
         async function playScale() {
             isPlaying = true;
             shouldStop = false;
             playBtn.textContent = "◼ Stop";
             playBtn.classList.add('stop');
 
-            if (mode === 'licks' && activeShape !== null) {
-                await playLick();
-                silenceAllWhenStopped();
-                return finishPlayback();
-            }
             if (mode === 'chords' && activeShape !== null) {
                 await playChordShape();
                 silenceAllWhenStopped();
@@ -1831,7 +1482,6 @@
 
         function finishPlayback() {
             document.querySelectorAll('.note-display.playing').forEach(n => n.classList.remove('playing'));
-            markTabColumn(-1);
             isPlaying = false;
             shouldStop = false;
             playBtn.textContent = "▶ Play";
