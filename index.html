@@ -247,6 +247,32 @@
         .fretboard-scroll { width: 100%; }
         .swipe-hint { display: none; }
 
+        /* ---------- Tab view (fret numbers on six string lines, highest string at the top) ---------- */
+        .tab-area { width: 100%; margin-top: 6px; }
+        .tab-heading { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; margin-bottom: 4px; }
+        .tab-title { font-size: 0.75rem; font-weight: bold; color: #aaa; }
+        .tab-help { font-size: 0.72rem; color: #777; }
+        .tab-view {
+            display: flex; overflow-x: auto; background: #222; border: 1px solid #3a3a3a;
+            border-radius: 6px; padding: 8px 10px; scrollbar-width: thin; scrollbar-color: #555 transparent;
+            font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 13px;
+        }
+        .tab-col { display: flex; flex-direction: column; flex: 0 0 auto; min-width: 26px; border-radius: 4px; }
+        .tab-cell {
+            height: 20px; display: flex; align-items: center; justify-content: center; padding: 0 3px;
+            background: linear-gradient(to bottom, transparent 9.5px, #555 9.5px, #555 10.5px, transparent 10.5px);
+        }
+        .tab-cell b { background: #222; color: #e6e1d6; font-weight: normal; padding: 0 2px; white-space: nowrap; }
+        .tab-cell b.root { color: var(--accent); }
+        .tab-cell b.mute { color: #e07a5f; }
+        .tab-col.tab-names { min-width: 20px; }
+        .tab-col.tab-names .tab-cell { background: none; color: #888; justify-content: flex-start; }
+        .tab-col.tab-bar { min-width: 8px; border-right: 2px solid #777; border-radius: 0; margin-right: 6px; }
+        .tab-col.tab-end { min-width: 8px; border-right: 2px solid #777; border-radius: 0; }
+        .tab-col.now { background: rgba(242, 163, 58, 0.2); }
+        .tab-col.now .tab-cell b { color: #fff; background: #3a2f1f; font-weight: bold; }
+        .tab-empty { color: #777; font-family: 'Segoe UI', sans-serif; font-size: 0.8rem; padding: 4px 0; }
+
         /* ---------- Scale shape selector ---------- */
         .shape-bar {
             width: 100%; display: flex; align-items: center; flex-wrap: wrap;
@@ -469,6 +495,14 @@
     </div>
     </div>
     <p class="swipe-hint">Swipe the fretboard to see all 24 frets</p>
+
+    <section class="tab-area" aria-label="Tab">
+        <div class="tab-heading">
+            <span class="tab-title">Tab</span>
+            <span class="tab-help" id="tabHelp">Numbers are frets to play, read left to right. The top line is the thinnest (highest) string.</span>
+        </div>
+        <div class="tab-view" id="tabView"></div>
+    </section>
 
     <script>
         const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
@@ -1244,7 +1278,72 @@
             });
 
             positionRangeWindow();
+            updateTab();
         }
+
+        /* ---------- Tab view ---------- */
+        const tabView = document.getElementById('tabView');
+        const tabHelp = document.getElementById('tabHelp');
+
+        // Shows what Play will play: the notes in the window, lowest string first. For a chord
+        // shape: the chord as one column (x = don't play that string), then its notes one by one.
+        function updateTab() {
+            const open = tunings[tuningSelect.value];          // highest string first, as displayed
+            const names = open.map(m => noteNames[m % 12]);
+            names[0] = names[0].toLowerCase();   // tab convention: lowercase top string, e.g. e B G D A E
+            const rootIndex = parseInt(rootSelect.value);
+            const columns = [];
+            const chordShape = mode === 'chords' && activeShape !== null ? allShapes()[activeShape] : null;
+
+            if (chordShape) {
+                const cells = [];
+                for (let row = 0; row < 6; row++) {
+                    const f = chordShape.frets[5 - row];
+                    const isRoot = f >= 0 && (open[row] + f) % 12 === rootIndex;
+                    cells.push(f < 0 ? { text: 'x', cls: 'mute' } : { text: String(f), cls: isRoot ? 'root' : '' });
+                }
+                columns.push({ key: 'chord', cells });
+                columns.push({ bar: true });
+            }
+            collectScaleNotes().forEach(note => {
+                const row = parseInt(note.dataset.string), cells = [];
+                for (let r = 0; r < 6; r++) {
+                    cells.push(r === row ? { text: note.dataset.fret, cls: parseInt(note.dataset.noteIndex) === rootIndex ? 'root' : '' } : null);
+                }
+                columns.push({ key: note.dataset.string + '-' + note.dataset.fret, cells });
+            });
+
+            tabHelp.textContent = chordShape
+                ? 'Numbers are frets. The first column is the whole chord (x = don\u2019t play that string), then its notes one at a time. The top line is the thinnest (highest) string.'
+                : 'Numbers are frets to play, read left to right. The top line is the thinnest (highest) string.';
+
+            if (columns.length === 0) {
+                tabView.innerHTML = '<div class="tab-empty">No notes in the selected frets. Drag the window or pick a shape.</div>';
+                return;
+            }
+            let html = '<div class="tab-col tab-names">' + names.map(n => '<span class="tab-cell">' + n + '</span>').join('') + '</div>';
+            columns.forEach(col => {
+                if (col.bar) { html += '<div class="tab-col tab-bar">' + '<span class="tab-cell"></span>'.repeat(6) + '</div>'; return; }
+                html += '<div class="tab-col" data-key="' + col.key + '">' + col.cells.map(c =>
+                    '<span class="tab-cell">' + (c ? '<b class="' + c.cls + '">' + c.text + '</b>' : '') + '</span>').join('') + '</div>';
+            });
+            html += '<div class="tab-col tab-end">' + '<span class="tab-cell"></span>'.repeat(6) + '</div>';
+            tabView.innerHTML = html;
+        }
+
+        // Highlight the tab column for a note being played ('chord' for a strum, null to clear)
+        function markTab(key) {
+            tabView.querySelectorAll('.tab-col.now').forEach(c => c.classList.remove('now'));
+            if (key === null) return;
+            const col = tabView.querySelector('.tab-col[data-key="' + key + '"]');
+            if (!col) return;
+            col.classList.add('now');
+            const left = col.offsetLeft - tabView.offsetLeft, right = left + col.offsetWidth;
+            if (left < tabView.scrollLeft + 24 || right > tabView.scrollLeft + tabView.clientWidth - 24) {
+                tabView.scrollTo({ left: left - tabView.clientWidth / 3, behavior: 'smooth' });
+            }
+        }
+        const noteKey = note => note.dataset.string + '-' + note.dataset.fret;
 
         /* ---------- Draggable focus window ---------- */
         let dragMode = null;          // 'move' | 'left' | 'right'
@@ -1419,6 +1518,7 @@
                     if (shouldStop) break;
                     playTone(parseInt(note.dataset.midi), true);
                     note.classList.add('playing');
+                    markTab('chord');
                     await wait(35);
                 }
                 if (notes[0]) revealNote(notes[0]);
@@ -1430,6 +1530,7 @@
                     if (shouldStop) break;
                     playTone(parseInt(note.dataset.midi));
                     note.classList.add('playing');
+                    markTab(noteKey(note));
                     await wait(beatMs());
                     note.classList.remove('playing');
                 }
@@ -1467,6 +1568,7 @@
                     const delayMs = 60000 / bpm; 
                     playTone(midi); 
                     note.classList.add('playing');
+                    markTab(noteKey(note));
                     revealNote(note);
                     await new Promise(r => setTimeout(r, delayMs)); 
                     note.classList.remove('playing');
@@ -1482,6 +1584,7 @@
 
         function finishPlayback() {
             document.querySelectorAll('.note-display.playing').forEach(n => n.classList.remove('playing'));
+            markTab(null);
             isPlaying = false;
             shouldStop = false;
             playBtn.textContent = "▶ Play";
